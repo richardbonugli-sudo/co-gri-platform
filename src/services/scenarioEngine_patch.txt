@@ -1,0 +1,125 @@
+# Patch for Regional vs. Global Propagation Enhancement
+# Location: Lines 1138-1163 in scenarioEngine.ts
+
+# CHANGE 1: Modify reason assignment logic to distinguish Global mode
+# Replace the else block starting at line 1145 with mode-specific logic
+
+OLD CODE (Lines 1145-1163):
+    } else {
+      // Enhanced spillover reasoning with materiality breakdown
+      const materialExposure = materialityBreakdowns[country];
+      if (materialExposure && shockResult.exposureBreakdown) {
+        reason = `TARGET-CENTRIC spillover: ${shockResult.exposureBreakdown.breakdown}`;
+        
+        materialityBreakdown = {
+          tradeRank: materialExposure.tradeRank,
+          tradeIntensity: materialExposure.tradeIntensity,
+          supplyChainScore: materialExposure.supplyChainScore,
+          financialLinkage: materialExposure.financialLinkage,
+          geographicProximity: materialExposure.geographicProximity,
+          materialityScore: materialExposure.materialityScore,
+          qualificationCriteria: materialExposure.qualificationCriteria
+        };
+      } else {
+        reason = `${config.propagationType} spillover - Limited exposure data available`;
+      }
+    }
+
+NEW CODE:
+    } else {
+      // Enhanced spillover reasoning with mode-specific logic
+      const materialExposure = materialityBreakdowns[country];
+      
+      if (config.propagationType === 'global') {
+        // GLOBAL MODE: Show all computed exposures, even if minimal
+        if (shockResult.exposureBreakdown) {
+          reason = `TARGET-CENTRIC spillover: ${shockResult.exposureBreakdown.breakdown}`;
+          
+          // Always provide breakdown in Global mode
+          if (materialExposure) {
+            materialityBreakdown = {
+              tradeRank: materialExposure.tradeRank,
+              tradeIntensity: materialExposure.tradeIntensity,
+              supplyChainScore: materialExposure.supplyChainScore,
+              financialLinkage: materialExposure.financialLinkage,
+              geographicProximity: materialExposure.geographicProximity,
+              materialityScore: materialExposure.materialityScore,
+              qualificationCriteria: materialExposure.qualificationCriteria.length > 0 
+                ? materialExposure.qualificationCriteria 
+                : ['Minimal exposure - included in Global propagation']
+            };
+          }
+        } else if (shockResult.propagationWeight > 0) {
+          // Show minimal spillover info even without full breakdown
+          reason = `Minimal spillover: PropagationWeight=${(shockResult.propagationWeight * 100).toFixed(3)}%, ΔCSI=${csiDelta.toFixed(3)}`;
+          
+          // Provide basic breakdown for minimal exposures
+          if (materialExposure) {
+            materialityBreakdown = {
+              tradeRank: materialExposure.tradeRank,
+              tradeIntensity: materialExposure.tradeIntensity,
+              supplyChainScore: materialExposure.supplyChainScore,
+              financialLinkage: materialExposure.financialLinkage,
+              geographicProximity: materialExposure.geographicProximity,
+              materialityScore: materialExposure.materialityScore,
+              qualificationCriteria: ['Minimal exposure - included in Global propagation']
+            };
+          }
+        } else {
+          // Only show "no data" if truly zero exposure
+          reason = `No exposure data available for any channel`;
+        }
+      } else {
+        // REGIONAL MODE: Only show if material exposure exists (current behavior)
+        if (materialExposure && shockResult.exposureBreakdown) {
+          reason = `TARGET-CENTRIC spillover: ${shockResult.exposureBreakdown.breakdown}`;
+          
+          materialityBreakdown = {
+            tradeRank: materialExposure.tradeRank,
+            tradeIntensity: materialExposure.tradeIntensity,
+            supplyChainScore: materialExposure.supplyChainScore,
+            financialLinkage: materialExposure.financialLinkage,
+            geographicProximity: materialExposure.geographicProximity,
+            materialityScore: materialExposure.materialityScore,
+            qualificationCriteria: materialExposure.qualificationCriteria
+          };
+        } else {
+          // In Regional mode, this shouldn't happen (filtered out earlier)
+          reason = `Insufficient material exposure (excluded from Regional propagation)`;
+        }
+      }
+    }
+
+# CHANGE 2: Add display threshold to ScenarioConfig interface
+# Location: Lines 42-58
+
+ADD TO ScenarioConfig interface (after line 49):
+  displayThreshold?: number;  // NEW: Minimum ΔCSI to display (optional, default: 0 for Regional, 0.05 for Global)
+
+# CHANGE 3: Add documentation comment
+# Location: Before getRegionalCountries() function (around line 690)
+
+ADD COMMENT:
+/**
+ * REGIONAL vs GLOBAL PROPAGATION MODES
+ * 
+ * REGIONAL MODE:
+ * - Purpose: Identify material, first-order spillovers
+ * - Inclusion: Countries with material exposure to target (filtered)
+ * - Criteria: Top-N trade partners, ≥X% trade intensity, supply chain, financial linkage
+ * - Output: ~20-40 countries with significant exposure
+ * - Use case: Near-term risk, realistic contagion, second-order effects
+ * 
+ * GLOBAL MODE:
+ * - Purpose: Measure full spillover distribution including long-tail effects
+ * - Inclusion: All countries where exposure can be computed (unfiltered)
+ * - Criteria: Any measurable trade, supply chain, or financial linkage
+ * - Output: ~150-195 countries with smooth decay pattern
+ * - Use case: Portfolio risk, tail risk, concentration analysis
+ * 
+ * KEY PRINCIPLE:
+ * Regional ⊂ Global (Regional is strict subset of Global)
+ * Same propagation formulas, different inclusion criteria
+ * Display threshold can filter noise without affecting calculation
+ */
+

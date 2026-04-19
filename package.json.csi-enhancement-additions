@@ -1,0 +1,19 @@
+{
+  "scripts": {
+    "csi-enhancement": "tsx src/services/csi-enhancement/cli.ts",
+    "csi:ingest": "tsx src/services/csi-enhancement/cli.ts ingest",
+    "csi:monitor": "tsx src/services/csi-enhancement/cli.ts monitor",
+    "csi:stats": "tsx src/services/csi-enhancement/cli.ts stats",
+    "csi:health": "tsx src/services/csi-enhancement/cli.ts health",
+    "csi:migrate": "psql $DATABASE_URL -f database/migrations/csi-enhancement/001_create_signals_tables.sql"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.10.9",
+    "@types/uuid": "^9.0.7",
+    "tsx": "^4.7.0"
+  }
+}

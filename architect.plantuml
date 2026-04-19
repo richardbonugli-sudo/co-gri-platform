@@ -1,0 +1,108 @@
+@startuml GDP-Weighted CSI Architecture
+
+!define RECTANGLE class
+
+skinparam backgroundColor #1a1a1a
+skinparam componentStyle rectangle
+skinparam packageBackgroundColor #2a2a2a
+skinparam packageBorderColor #4a4a4a
+skinparam componentBackgroundColor #3a3a3a
+skinparam componentBorderColor #5a5a5a
+
+package "Frontend Layer" {
+  [GlobalRiskIndex.tsx] as UI
+  [MetricComparisonChart.tsx] as Chart
+  [TopContributorsPanel.tsx] as Contributors
+  [GDPWeightTooltip.tsx] as Tooltip
+  [MetricSelector.tsx] as Selector
+}
+
+package "State Management" {
+  [globalCSIStore.ts] as Store
+  [useGlobalCSI.ts] as Hook
+}
+
+package "Calculation Engine" {
+  [compositeCalculator.ts] as Calculator
+  [gdpWeightedCalculator.ts] as GDPCalc
+}
+
+package "Data Layer" {
+  [gdpDataService.ts] as GDPService
+  [gdpData.ts] as StaticGDP
+  [csiCache.ts] as Cache
+}
+
+package "External APIs" {
+  cloud "World Bank API" as WorldBank
+  cloud "IMF WEO API" as IMF
+}
+
+package "Data Sources" {
+  database "GDP Weights\n(Static)" as GDPStatic
+  database "CSI Cache\n(IndexedDB)" as CacheDB
+}
+
+' Frontend connections
+UI --> Store : "subscribe to state"
+UI --> Chart : "render comparison"
+UI --> Contributors : "show top countries"
+UI --> Tooltip : "display on hover"
+UI --> Selector : "toggle metrics"
+
+' State management connections
+Store --> Hook : "provides hooks"
+Hook --> Calculator : "call calculations"
+Hook --> GDPCalc : "GDP-weighted calcs"
+
+' Calculation engine connections
+Calculator --> GDPCalc : "delegate GDP weighting"
+GDPCalc --> GDPService : "get GDP weights"
+GDPCalc --> Calculator : "use composite CSI"
+Calculator --> Cache : "read/write cache"
+
+' Data layer connections
+GDPService --> StaticGDP : "fallback to static"
+GDPService --> WorldBank : "fetch PPP GDP"
+GDPService --> IMF : "fallback source"
+GDPService --> GDPStatic : "cache weights"
+Cache --> CacheDB : "persist results"
+
+note right of GDPCalc
+  New component for
+  GDP-weighted calculations
+  
+  Key methods:
+  - calculateGDPWeightedGlobalCSI()
+  - calculateGDPWeightedTimeSeries()
+  - getTopContributors()
+  - compareMetrics()
+end note
+
+note right of GDPService
+  Handles data fetching,
+  caching, and fallbacks
+  
+  Fallback hierarchy:
+  1. World Bank API
+  2. IMF WEO API
+  3. Static file
+  4. Regional estimate
+end note
+
+note left of Store
+  Zustand store managing:
+  - Current metrics
+  - User preferences
+  - GDP data state
+  - Time series cache
+end note
+
+note bottom of WorldBank
+  Endpoint:
+  /v2/country/{codes}/indicator/NY.GDP.MKTP.PP.CD
+  
+  Update frequency: Annual (July)
+end note
+
+@enduml

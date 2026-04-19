@@ -1,0 +1,1875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Step 1 Decision Logic: Geographic Exposure Allocation - Enhanced Documentation</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            line-height: 1.6; 
+            color: #333; 
+            background: #f5f5f5; 
+        }
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            padding: 40px 20px; 
+            background: white; 
+            box-shadow: 0 0 20px rgba(0,0,0,0.1); 
+        }
+        h1 { 
+            color: #0d5f5f; 
+            font-size: 2.8em; 
+            margin-bottom: 15px; 
+            border-bottom: 5px solid #0d5f5f; 
+            padding-bottom: 20px; 
+        }
+        h2 { 
+            color: #0d5f5f; 
+            font-size: 2.2em; 
+            margin-top: 50px; 
+            margin-bottom: 25px; 
+            border-bottom: 3px solid #7fa89f; 
+            padding-bottom: 12px; 
+        }
+        h3 { 
+            color: #0a4a4a; 
+            font-size: 1.7em; 
+            margin-top: 35px; 
+            margin-bottom: 18px; 
+            border-left: 5px solid #0d5f5f;
+            padding-left: 15px;
+        }
+        h4 {
+            color: #0a4a4a;
+            font-size: 1.3em;
+            margin-top: 25px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .subtitle { 
+            font-size: 1.3em; 
+            color: #666; 
+            margin-bottom: 35px; 
+            font-style: italic;
+        }
+        .metadata { 
+            background: linear-gradient(135deg, #f0f8f8 0%, #e6f4f4 100%);
+            padding: 25px; 
+            border-left: 5px solid #0d5f5f; 
+            margin-bottom: 40px; 
+            border-radius: 5px;
+        }
+        .metadata p {
+            margin: 8px 0;
+            font-size: 1.05em;
+        }
+        .toc {
+            background: #f9f9f9;
+            border: 2px solid #0d5f5f;
+            padding: 25px;
+            margin: 30px 0;
+            border-radius: 8px;
+        }
+        .toc h3 {
+            margin-top: 0;
+            border-left: none;
+            padding-left: 0;
+        }
+        .toc ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .toc ul li {
+            margin: 10px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+        .toc ul li:before {
+            content: "▸";
+            position: absolute;
+            left: 5px;
+            color: #0d5f5f;
+            font-weight: bold;
+        }
+        .toc ul ul {
+            padding-left: 25px;
+        }
+        .toc a {
+            color: #0d5f5f;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        .toc a:hover {
+            text-decoration: underline;
+            color: #0a4a4a;
+        }
+        pre { 
+            background: #2d2d2d;
+            color: #f8f8f2;
+            border: 1px solid #444; 
+            border-left: 5px solid #0d5f5f; 
+            padding: 25px; 
+            overflow-x: auto; 
+            margin: 25px 0; 
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace; 
+            font-size: 0.95em; 
+            line-height: 1.6; 
+            border-radius: 5px;
+        }
+        .keyword { color: #66d9ef; font-weight: bold; }
+        .function { color: #a6e22e; }
+        .string { color: #e6db74; }
+        .comment { color: #75715e; font-style: italic; }
+        .number { color: #ae81ff; }
+        .example { 
+            background: #fffbf0; 
+            border-left: 5px solid #ffc107; 
+            padding: 25px; 
+            margin: 25px 0; 
+            border-radius: 5px;
+        }
+        .example h4 {
+            color: #f57c00;
+            margin-top: 0;
+        }
+        .warning {
+            background: #fff3e0;
+            border-left: 5px solid #ff9800;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .info {
+            background: #e3f2fd;
+            border-left: 5px solid #2196f3;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .success {
+            background: #e8f5e9;
+            border-left: 5px solid #4caf50;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            margin: 25px 0; 
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        th, td { 
+            border: 1px solid #ddd; 
+            padding: 15px; 
+            text-align: left; 
+        }
+        th { 
+            background: #0d5f5f; 
+            color: white; 
+            font-weight: 600;
+        }
+        tr:nth-child(even) {
+            background: #f9f9f9;
+        }
+        tr:hover {
+            background: #f0f8f8;
+        }
+        .flowchart {
+            background: #f5f5f5;
+            border: 2px solid #0d5f5f;
+            padding: 25px;
+            margin: 25px 0;
+            font-family: monospace;
+            white-space: pre;
+            overflow-x: auto;
+            border-radius: 5px;
+        }
+        .formula {
+            background: #f0f4f8;
+            border: 2px solid #4a90e2;
+            padding: 20px;
+            margin: 20px 0;
+            font-family: 'Georgia', serif;
+            font-size: 1.1em;
+            text-align: center;
+            border-radius: 5px;
+        }
+        .print-button { 
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            background: #0d5f5f; 
+            color: white; 
+            border: none; 
+            padding: 15px 30px; 
+            font-size: 16px; 
+            cursor: pointer; 
+            border-radius: 5px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3); 
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+        .print-button:hover {
+            background: #0a4a4a;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+        }
+        ul, ol {
+            margin: 15px 0;
+            padding-left: 40px;
+        }
+        li {
+            margin: 8px 0;
+        }
+        strong {
+            color: #0a4a4a;
+        }
+        code {
+            background: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #d63384;
+        }
+        .section-divider {
+            border: 0;
+            height: 3px;
+            background: linear-gradient(to right, #0d5f5f, #7fa89f, #0d5f5f);
+            margin: 50px 0;
+        }
+        @media print { 
+            .print-button { display: none; }
+            .container { box-shadow: none; }
+            h2 { page-break-before: always; }
+        }
+    </style>
+</head>
+<body>
+    <button class="print-button" onclick="window.print()">🖨️ Print to PDF</button>
+    <div class="container">
+        <h1>Step 1 Decision Logic: Geographic Exposure Allocation</h1>
+        <p class="subtitle">Enhanced Documentation - "Assess a Company or Ticker" Service</p>
+        
+        <div class="metadata">
+            <p><strong>Document Version:</strong> 2.0 (Enhanced)</p>
+            <p><strong>Date:</strong> December 27, 2024</p>
+            <p><strong>Service:</strong> CedarOwl Geographic Exposure Analysis</p>
+            <p><strong>Coverage:</strong> Complete Step 1 Decision Logic with 5 Core Topics</p>
+            <p><strong>Status:</strong> Production Documentation</p>
+        </div>
+
+        <div class="toc">
+            <h3>📑 Table of Contents</h3>
+            <ul>
+                <li><a href="#overview">1. Overview & Architecture</a></li>
+                <li><a href="#structured-evidence">2. Structured Evidence Parsing</a>
+                    <ul>
+                        <li><a href="#structured-tables">2.1 Table Detection & Parsing</a></li>
+                        <li><a href="#structured-validation">2.2 Data Validation Rules</a></li>
+                        <li><a href="#structured-confidence">2.3 Confidence Scoring</a></li>
+                    </ul>
+                </li>
+                <li><a href="#narrative-evidence">3. Narrative Evidence Parsing & Label Definitions</a>
+                    <ul>
+                        <li><a href="#narrative-parsing">3.1 Narrative Parsing Algorithms</a></li>
+                        <li><a href="#label-definitions">3.2 Label Classification System</a></li>
+                        <li><a href="#narrative-context">3.3 Context Analysis Rules</a></li>
+                    </ul>
+                </li>
+                <li><a href="#closed-total-ssf">4. Closed-Total / SSF Gating Logic</a>
+                    <ul>
+                        <li><a href="#closed-total-def">4.1 Closed-Total Definition</a></li>
+                        <li><a href="#ssf-gating">4.2 SSF Gating Conditions</a></li>
+                        <li><a href="#gating-flowchart">4.3 Gating Decision Flowchart</a></li>
+                    </ul>
+                </li>
+                <li><a href="#rf-case-selection">5. RF Case Selection (RF-A / RF-B / RF-C / RF-D)</a>
+                    <ul>
+                        <li><a href="#rf-definitions">5.1 RF Case Definitions</a></li>
+                        <li><a href="#rf-decision-tree">5.2 Case Selection Decision Tree</a></li>
+                        <li><a href="#rf-examples">5.3 Examples for Each RF Case</a></li>
+                    </ul>
+                </li>
+                <li><a href="#allocation-routing">6. Direct + Residual Allocation Routing</a>
+                    <ul>
+                        <li><a href="#direct-allocation">6.1 Direct Allocation Methodology</a></li>
+                        <li><a href="#residual-allocation">6.2 Residual Allocation Methodology</a></li>
+                        <li><a href="#channel-routing">6.3 Channel-Specific Routing</a></li>
+                    </ul>
+                </li>
+                <li><a href="#appendix">7. Appendix & References</a></li>
+            </ul>
+        </div>
+
+        <hr class="section-divider">
+
+        <h2 id="overview">1. Overview & Architecture</h2>
+        
+        <h3>1.1 System Architecture</h3>
+        <p>Step 1 processes geographic exposure evidence for <strong>four independent channels</strong> with the following blended weights:</p>
+        
+        <table>
+            <tr>
+                <th>Channel</th>
+                <th>Symbol</th>
+                <th>Default Weight</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td><strong>Revenue</strong></td>
+                <td>Wᵣ</td>
+                <td>40%</td>
+                <td>Geographic revenue distribution</td>
+            </tr>
+            <tr>
+                <td><strong>Supply Chain</strong></td>
+                <td>Wₛ</td>
+                <td>35%</td>
+                <td>Manufacturing, sourcing, suppliers</td>
+            </tr>
+            <tr>
+                <td><strong>Physical Assets</strong></td>
+                <td>Wₚ</td>
+                <td>15%</td>
+                <td>PP&E, facilities, subsidiaries</td>
+            </tr>
+            <tr>
+                <td><strong>Financial</strong></td>
+                <td>W𝒻</td>
+                <td>10%</td>
+                <td>Debt, currency, treasury centers</td>
+            </tr>
+        </table>
+
+        <div class="info">
+            <strong>📌 Key Principle:</strong> Each channel is calculated <strong>independently</strong>, then blended using sector-specific coefficients. This ensures that evidence quality in one channel does not contaminate others.
+        </div>
+
+        <h3>1.2 Evidence Hierarchy (4 Tiers)</h3>
+        <p>The system follows a strict 4-tier evidence hierarchy:</p>
+        
+        <table>
+            <tr>
+                <th>Tier</th>
+                <th>Evidence Type</th>
+                <th>Confidence</th>
+                <th>Priority</th>
+            </tr>
+            <tr>
+                <td><strong>Tier 1</strong></td>
+                <td>Structured Primary Evidence (Tables, Exhibit 21)</td>
+                <td>90-95%</td>
+                <td>Highest</td>
+            </tr>
+            <tr>
+                <td><strong>Tier 2</strong></td>
+                <td>Narrative Primary Evidence (SEC text)</td>
+                <td>70-85%</td>
+                <td>High</td>
+            </tr>
+            <tr>
+                <td><strong>Tier 3</strong></td>
+                <td>Supplementary Evidence (Sustainability reports)</td>
+                <td>60-80%</td>
+                <td>Medium</td>
+            </tr>
+            <tr>
+                <td><strong>Tier 4</strong></td>
+                <td>Fallback Logic (SSF, RF, GF)</td>
+                <td>50-75%</td>
+                <td>Last Resort</td>
+            </tr>
+        </table>
+
+        <hr class="section-divider">
+
+        <h2 id="structured-evidence">2. Structured Evidence Parsing</h2>
+
+        <h3 id="structured-tables">2.1 Table Detection & Parsing Algorithms</h3>
+        
+        <h4>2.1.1 Revenue Table Detection</h4>
+        <p>The system searches for geographic revenue tables in SEC 10-K/10-Q filings using pattern matching:</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">detectRevenueTable</span>(secFilingText):
+    <span class="comment">// Step 1: Identify table sections</span>
+    tableSections = <span class="function">extractTableSections</span>(secFilingText)
+    
+    <span class="keyword">FOR EACH</span> section <span class="keyword">IN</span> tableSections:
+        <span class="comment">// Step 2: Check for geographic revenue indicators</span>
+        hasGeographicHeader = <span class="function">containsKeywords</span>(section.headers, [
+            <span class="string">"geographic"</span>, <span class="string">"region"</span>, <span class="string">"segment"</span>, <span class="string">"revenue by"</span>, 
+            <span class="string">"net sales"</span>, <span class="string">"revenues"</span>
+        ])
+        
+        hasRevenueData = <span class="function">containsKeywords</span>(section.content, [
+            <span class="string">"revenue"</span>, <span class="string">"sales"</span>, <span class="string">"net sales"</span>
+        ])
+        
+        <span class="keyword">IF</span> hasGeographicHeader <span class="keyword">AND</span> hasRevenueData:
+            <span class="comment">// Step 3: Parse table structure</span>
+            parsedTable = <span class="function">parseTableStructure</span>(section)
+            
+            <span class="comment">// Step 4: Extract country/region data</span>
+            <span class="keyword">RETURN</span> <span class="function">extractGeographicData</span>(parsedTable)
+    
+    <span class="keyword">RETURN</span> <span class="keyword">NULL</span> <span class="comment">// No revenue table found</span></pre>
+
+        <h4>2.1.2 Geographic Entity Recognition</h4>
+        <p>Once a table is detected, the system extracts geographic entities (countries and regions):</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">extractGeographicData</span>(parsedTable):
+    geographicData = {
+        countries: [],
+        regions: [],
+        weights: {},
+        totalAllocated: <span class="number">0.0</span>
+    }
+    
+    <span class="keyword">FOR EACH</span> row <span class="keyword">IN</span> parsedTable.rows:
+        entityName = row.geographicEntity
+        revenueValue = row.revenueAmount
+        
+        <span class="comment">// Step 1: Normalize entity name</span>
+        normalizedName = <span class="function">normalizeEntityName</span>(entityName)
+        
+        <span class="comment">// Step 2: Classify as country or region</span>
+        <span class="keyword">IF</span> <span class="function">isActualCountry</span>(normalizedName):
+            countryName = <span class="function">normalizeCountryName</span>(normalizedName)
+            geographicData.countries.<span class="function">append</span>(countryName)
+            geographicData.weights[countryName] = revenueValue
+        <span class="keyword">ELSE IF</span> <span class="function">isKnownRegion</span>(normalizedName):
+            geographicData.regions.<span class="function">append</span>(normalizedName)
+            geographicData.weights[normalizedName] = revenueValue
+        
+        geographicData.totalAllocated += revenueValue
+    
+    <span class="keyword">RETURN</span> geographicData</pre>
+
+        <div class="example">
+            <h4>Example: Apple (AAPL) Revenue Table</h4>
+            <p><strong>Input (SEC 10-K Table):</strong></p>
+            <pre>Geographic Segments (in millions):
+Americas:           $169,658  (45.2%)
+Europe:             $94,294   (25.1%)
+Greater China:      $72,559   (19.3%)
+Japan:              $24,257   (6.5%)
+Rest of Asia Pacific: $14,308  (3.8%)</pre>
+            
+            <p><strong>Parsed Output:</strong></p>
+            <pre>{
+  "countries": [],
+  "regions": ["Americas", "Europe", "Greater China", "Japan", "Rest of Asia Pacific"],
+  "weights": {
+    "Americas": 0.452,
+    "Europe": 0.251,
+    "Greater China": 0.193,
+    "Japan": 0.065,
+    "Rest of Asia Pacific": 0.038
+  },
+  "totalAllocated": 1.0
+}</pre>
+        </div>
+
+        <h4>2.1.3 Revenue/Percentage Extraction</h4>
+        <p>The system extracts numerical values and converts them to normalized weights:</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">parsePercentage</span>(valueString):
+    <span class="comment">// Handle various formats: "45.2%", "$169,658M", "45.2"</span>
+    
+    <span class="comment">// Step 1: Remove currency symbols and commas</span>
+    cleanValue = valueString.<span class="function">replace</span>(<span class="string">/[$,]/g</span>, <span class="string">""</span>)
+    
+    <span class="comment">// Step 2: Check if percentage or absolute value</span>
+    <span class="keyword">IF</span> cleanValue.<span class="function">contains</span>(<span class="string">"%"</span>):
+        percentage = <span class="function">parseFloat</span>(cleanValue.<span class="function">replace</span>(<span class="string">"%"</span>, <span class="string">""</span>))
+        <span class="keyword">RETURN</span> percentage / <span class="number">100.0</span>
+    <span class="keyword">ELSE</span>:
+        <span class="comment">// Absolute value - will be normalized later</span>
+        <span class="keyword">RETURN</span> <span class="function">parseFloat</span>(cleanValue)
+
+<span class="keyword">FUNCTION</span> <span class="function">normalizeWeights</span>(weights):
+    <span class="comment">// Ensure all weights sum to 1.0</span>
+    totalWeight = <span class="function">sum</span>(weights.<span class="function">values</span>())
+    
+    normalizedWeights = {}
+    <span class="keyword">FOR EACH</span> entity, weight <span class="keyword">IN</span> weights:
+        normalizedWeights[entity] = weight / totalWeight
+    
+    <span class="keyword">RETURN</span> normalizedWeights</pre>
+
+        <h3 id="structured-validation">2.2 Data Validation Rules</h3>
+        
+        <h4>2.2.1 Validation Rule Set</h4>
+        <p>All structured evidence must pass the following validation rules:</p>
+
+        <table>
+            <tr>
+                <th>Rule ID</th>
+                <th>Rule Name</th>
+                <th>Description</th>
+                <th>Severity</th>
+            </tr>
+            <tr>
+                <td>V1</td>
+                <td>Sum of Weights = 1</td>
+                <td>Total allocation must equal 100% (±1% tolerance)</td>
+                <td>ERROR</td>
+            </tr>
+            <tr>
+                <td>V2</td>
+                <td>No Country in Multiple Regions</td>
+                <td>Each country appears in exactly one region</td>
+                <td>ERROR</td>
+            </tr>
+            <tr>
+                <td>V3</td>
+                <td>Non-Negative Weights</td>
+                <td>All weights must be ≥ 0</td>
+                <td>ERROR</td>
+            </tr>
+            <tr>
+                <td>V4</td>
+                <td>Valid Geographic Entities</td>
+                <td>All entities must be recognized countries or regions</td>
+                <td>WARNING</td>
+            </tr>
+            <tr>
+                <td>V5</td>
+                <td>Minimum Threshold</td>
+                <td>Weights below 0.1% may be excluded</td>
+                <td>INFO</td>
+            </tr>
+        </table>
+
+        <h4>2.2.2 Validation Implementation</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">validateStructuredEvidence</span>(geographicData):
+    validationResults = []
+    
+    <span class="comment">// Rule V1: Sum of Weights = 1</span>
+    totalWeight = <span class="function">sum</span>(geographicData.weights.<span class="function">values</span>())
+    sumValid = <span class="function">abs</span>(totalWeight - <span class="number">1.0</span>) &lt; <span class="number">0.01</span>
+    
+    validationResults.<span class="function">append</span>({
+        rule: <span class="string">"V1: Sum of Weights = 1"</span>,
+        passed: sumValid,
+        message: <span class="string">"Total weight: "</span> + <span class="function">formatPercent</span>(totalWeight),
+        severity: sumValid ? <span class="string">"INFO"</span> : <span class="string">"ERROR"</span>
+    })
+    
+    <span class="comment">// Rule V2: No Country in Multiple Regions</span>
+    countryAppearances = <span class="function">countCountryAppearances</span>(geographicData)
+    multipleAppearances = <span class="number">0</span>
+    
+    <span class="keyword">FOR EACH</span> country, count <span class="keyword">IN</span> countryAppearances:
+        <span class="keyword">IF</span> count &gt; <span class="number">1</span>:
+            multipleAppearances++
+            validationResults.<span class="function">append</span>({
+                rule: <span class="string">"V2: No Country in Multiple Regions"</span>,
+                passed: <span class="keyword">FALSE</span>,
+                message: country + <span class="string">" appears in "</span> + count + <span class="string">" regions"</span>,
+                severity: <span class="string">"ERROR"</span>
+            })
+    
+    <span class="keyword">IF</span> multipleAppearances == <span class="number">0</span>:
+        validationResults.<span class="function">append</span>({
+            rule: <span class="string">"V2: No Country in Multiple Regions"</span>,
+            passed: <span class="keyword">TRUE</span>,
+            message: <span class="string">"All countries appear in exactly one region"</span>,
+            severity: <span class="string">"INFO"</span>
+        })
+    
+    <span class="comment">// Rule V3: Non-Negative Weights</span>
+    <span class="keyword">FOR EACH</span> entity, weight <span class="keyword">IN</span> geographicData.weights:
+        <span class="keyword">IF</span> weight &lt; <span class="number">0</span>:
+            validationResults.<span class="function">append</span>({
+                rule: <span class="string">"V3: Non-Negative Weights"</span>,
+                passed: <span class="keyword">FALSE</span>,
+                message: entity + <span class="string">" has negative weight: "</span> + weight,
+                severity: <span class="string">"ERROR"</span>
+            })
+    
+    <span class="keyword">RETURN</span> validationResults</pre>
+
+        <h3 id="structured-confidence">2.3 Confidence Scoring</h3>
+        
+        <h4>2.3.1 Confidence Score Calculation</h4>
+        <p>Structured evidence confidence is calculated based on multiple factors:</p>
+
+        <div class="formula">
+            <strong>Confidence Score Formula:</strong><br><br>
+            C = C<sub>base</sub> + C<sub>completeness</sub> + C<sub>validation</sub> + C<sub>cross-check</sub>
+        </div>
+
+        <table>
+            <tr>
+                <th>Component</th>
+                <th>Range</th>
+                <th>Description</th>
+            </tr>
+            <tr>
+                <td>C<sub>base</sub></td>
+                <td>0.85 - 0.90</td>
+                <td>Base confidence for structured tables</td>
+            </tr>
+            <tr>
+                <td>C<sub>completeness</sub></td>
+                <td>0.00 - 0.05</td>
+                <td>Bonus for data completeness (all fields present)</td>
+            </tr>
+            <tr>
+                <td>C<sub>validation</sub></td>
+                <td>0.00 - 0.03</td>
+                <td>Bonus for passing all validation rules</td>
+            </tr>
+            <tr>
+                <td>C<sub>cross-check</sub></td>
+                <td>0.00 - 0.02</td>
+                <td>Bonus for cross-validation with other sources</td>
+            </tr>
+        </table>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">calculateStructuredConfidence</span>(geographicData, validationResults):
+    <span class="comment">// Base confidence for structured data</span>
+    baseConfidence = <span class="number">0.90</span>
+    
+    <span class="comment">// Completeness bonus (0-5%)</span>
+    totalEntities = geographicData.countries.<span class="function">length</span> + geographicData.regions.<span class="function">length</span>
+    completenessBonus = <span class="function">min</span>(<span class="number">0.05</span>, totalEntities / <span class="number">10</span> * <span class="number">0.05</span>)
+    
+    <span class="comment">// Validation bonus (0-3%)</span>
+    passedValidations = <span class="function">count</span>(validationResults, v =&gt; v.passed)
+    totalValidations = validationResults.<span class="function">length</span>
+    validationBonus = (passedValidations / totalValidations) * <span class="number">0.03</span>
+    
+    <span class="comment">// Cross-validation bonus (0-2%)</span>
+    crossCheckBonus = geographicData.crossValidated ? <span class="number">0.02</span> : <span class="number">0.0</span>
+    
+    confidence = baseConfidence + completenessBonus + validationBonus + crossCheckBonus
+    
+    <span class="keyword">RETURN</span> <span class="function">min</span>(<span class="number">0.95</span>, confidence) <span class="comment">// Cap at 95%</span></pre>
+
+        <hr class="section-divider">
+
+        <h2 id="narrative-evidence">3. Narrative Evidence Parsing & Label Definitions</h2>
+
+        <h3 id="narrative-parsing">3.1 Narrative Parsing Algorithms</h3>
+
+        <h4>3.1.1 Text Extraction from SEC Filings</h4>
+        <p>The system extracts narrative text from specific SEC filing sections:</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">extractNarrativeContent</span>(secFiling, channel):
+    <span class="comment">// Define section mappings for each channel</span>
+    sectionMappings = {
+        <span class="string">"revenue"</span>: [<span class="string">"Item 1. Business"</span>, <span class="string">"Geographic Segments"</span>, <span class="string">"Revenue Recognition"</span>],
+        <span class="string">"supply"</span>: [<span class="string">"Item 1. Business"</span>, <span class="string">"Manufacturing"</span>, <span class="string">"Supply Chain"</span>],
+        <span class="string">"assets"</span>: [<span class="string">"Item 2. Properties"</span>, <span class="string">"Facilities"</span>],
+        <span class="string">"financial"</span>: [<span class="string">"Item 7A. Quantitative and Qualitative Disclosures"</span>, <span class="string">"Note 4"</span>]
+    }
+    
+    relevantSections = sectionMappings[channel]
+    narrativeText = <span class="string">""</span>
+    
+    <span class="keyword">FOR EACH</span> sectionName <span class="keyword">IN</span> relevantSections:
+        section = secFiling.<span class="function">findSection</span>(sectionName)
+        <span class="keyword">IF</span> section <span class="keyword">EXISTS</span>:
+            narrativeText += section.text + <span class="string">"\n\n"</span>
+    
+    <span class="keyword">RETURN</span> narrativeText</pre>
+
+        <h4>3.1.2 Geographic Entity Extraction (NLP)</h4>
+        <p>Natural Language Processing is used to identify geographic entities in narrative text:</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">extractGeographicEntities</span>(narrativeText):
+    entities = {
+        countries: <span class="keyword">new</span> <span class="function">Set</span>(),
+        regions: [],
+        descriptions: []
+    }
+    
+    <span class="comment">// Step 1: Sentence tokenization</span>
+    sentences = narrativeText.<span class="function">split</span>(<span class="string">/[.;]/</span>)
+    
+    <span class="keyword">FOR EACH</span> sentence <span class="keyword">IN</span> sentences:
+        <span class="comment">// Step 2: Country name matching</span>
+        <span class="keyword">FOR EACH</span> country, aliases <span class="keyword">IN</span> COUNTRY_ALIASES:
+            <span class="keyword">FOR EACH</span> alias <span class="keyword">IN</span> aliases:
+                regex = <span class="keyword">new</span> <span class="function">RegExp</span>(<span class="string">"\\b"</span> + alias + <span class="string">"\\b"</span>, <span class="string">"i"</span>)
+                <span class="keyword">IF</span> regex.<span class="function">test</span>(sentence):
+                    entities.countries.<span class="function">add</span>(country)
+                    <span class="keyword">BREAK</span>
+        
+        <span class="comment">// Step 3: Regional definition extraction</span>
+        regionalDef = <span class="function">parseRegionalDefinition</span>(sentence)
+        <span class="keyword">IF</span> regionalDef:
+            entities.regions.<span class="function">append</span>(regionalDef)
+        
+        <span class="comment">// Step 4: Store context</span>
+        <span class="keyword">IF</span> entities.countries.<span class="function">size</span> &gt; <span class="number">0</span> <span class="keyword">OR</span> regionalDef:
+            entities.descriptions.<span class="function">append</span>(sentence.<span class="function">trim</span>())
+    
+    <span class="keyword">RETURN</span> entities</pre>
+
+        <h4>3.1.3 Regional Definition Parsing</h4>
+        <p>The system identifies explicit regional definitions using pattern matching:</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">parseRegionalDefinition</span>(sentence):
+    <span class="comment">// Pattern 1: "Region includes X, Y, and Z"</span>
+    includesPattern = <span class="string">/([A-Z][a-z\s]+)\s+includes?\s+([^.;]+)/i</span>
+    match = sentence.<span class="function">match</span>(includesPattern)
+    
+    <span class="keyword">IF</span> match:
+        regionName = match[<span class="number">1</span>].<span class="function">trim</span>()
+        includedText = match[<span class="number">2</span>]
+        countries = <span class="function">extractCountriesFromText</span>(includedText)
+        
+        <span class="keyword">IF</span> countries.<span class="function">length</span> &gt; <span class="number">0</span>:
+            <span class="keyword">RETURN</span> {
+                regionName: regionName,
+                countries: countries,
+                source: <span class="string">"Narrative text (includes pattern)"</span>,
+                confidence: <span class="string">"high"</span>
+            }
+    
+    <span class="comment">// Pattern 2: "Region consists of X, Y, and Z"</span>
+    consistsPattern = <span class="string">/([A-Z][a-z\s]+)\s+consists?\s+of\s+([^.;]+)/i</span>
+    match = sentence.<span class="function">match</span>(consistsPattern)
+    
+    <span class="keyword">IF</span> match:
+        <span class="comment">// Similar processing...</span>
+        <span class="keyword">RETURN</span> regionalDefinition
+    
+    <span class="keyword">RETURN</span> <span class="keyword">NULL</span></pre>
+
+        <div class="example">
+            <h4>Example: Apple (AAPL) Narrative Evidence</h4>
+            <p><strong>Input (SEC 10-K Narrative):</strong></p>
+            <pre>"Europe segment includes European countries, as well as India, 
+the Middle East, and Africa. Rest of Asia Pacific segment includes 
+Australia, New Zealand, and other Asian countries not included in 
+the Company's other reportable segments."</pre>
+            
+            <p><strong>Parsed Output:</strong></p>
+            <pre>{
+  "regionalDefinitions": [
+    {
+      "regionName": "Europe",
+      "countries": ["Germany", "United Kingdom", "France", "India", 
+                    "Saudi Arabia", "United Arab Emirates", "South Africa"],
+      "source": "Narrative text (includes pattern)",
+      "confidence": "high"
+    },
+    {
+      "regionName": "Rest of Asia Pacific",
+      "countries": ["Australia", "New Zealand", "Indonesia", "Thailand"],
+      "source": "Narrative text (includes pattern)",
+      "confidence": "high"
+    }
+  ]
+}</pre>
+        </div>
+
+        <h3 id="label-definitions">3.2 Label Classification System</h3>
+
+        <h4>3.2.1 Label Types & Definitions</h4>
+        <p>The system classifies narrative evidence into three label types:</p>
+
+        <table>
+            <tr>
+                <th>Label Type</th>
+                <th>Definition</th>
+                <th>Confidence</th>
+                <th>Usage</th>
+            </tr>
+            <tr>
+                <td><strong>Direct</strong></td>
+                <td>Explicit country mention with quantitative context</td>
+                <td>85-95%</td>
+                <td>Primary allocation</td>
+            </tr>
+            <tr>
+                <td><strong>Indirect</strong></td>
+                <td>Country mentioned without quantitative data</td>
+                <td>60-75%</td>
+                <td>Universe expansion only</td>
+            </tr>
+            <tr>
+                <td><strong>Qualitative</strong></td>
+                <td>Regional description without specific countries</td>
+                <td>50-65%</td>
+                <td>Restricted fallback guidance</td>
+            </tr>
+        </table>
+
+        <h4>3.2.2 Label Classification Algorithm</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">classifyNarrativeLabel</span>(sentence, country, channel):
+    <span class="comment">// Define channel-specific keywords</span>
+    channelKeywords = {
+        <span class="string">"revenue"</span>: {
+            direct: [<span class="string">"revenue"</span>, <span class="string">"sales"</span>, <span class="string">"$"</span>, <span class="string">"%"</span>, <span class="string">"million"</span>, <span class="string">"billion"</span>],
+            indirect: [<span class="string">"market"</span>, <span class="string">"customers"</span>, <span class="string">"demand"</span>]
+        },
+        <span class="string">"supply"</span>: {
+            direct: [<span class="string">"manufacturing"</span>, <span class="string">"supplier"</span>, <span class="string">"production"</span>, <span class="string">"assembly"</span>],
+            indirect: [<span class="string">"sourcing"</span>, <span class="string">"procurement"</span>]
+        },
+        <span class="comment">// ... other channels</span>
+    }
+    
+    lowerSentence = sentence.<span class="function">toLowerCase</span>()
+    
+    <span class="comment">// Check for direct evidence (quantitative)</span>
+    hasQuantitative = <span class="function">containsAny</span>(lowerSentence, [<span class="string">"$"</span>, <span class="string">"%"</span>, <span class="string">"million"</span>, <span class="string">"billion"</span>])
+    hasDirectKeyword = <span class="function">containsAny</span>(lowerSentence, channelKeywords[channel].direct)
+    
+    <span class="keyword">IF</span> hasQuantitative <span class="keyword">AND</span> hasDirectKeyword:
+        <span class="keyword">RETURN</span> {
+            label: <span class="string">"direct"</span>,
+            confidence: <span class="number">0.90</span>,
+            context: sentence,
+            reasoning: <span class="string">"Quantitative data with direct channel keyword"</span>
+        }
+    
+    <span class="comment">// Check for indirect evidence (qualitative)</span>
+    hasIndirectKeyword = <span class="function">containsAny</span>(lowerSentence, channelKeywords[channel].indirect)
+    
+    <span class="keyword">IF</span> hasIndirectKeyword:
+        <span class="keyword">RETURN</span> {
+            label: <span class="string">"indirect"</span>,
+            confidence: <span class="number">0.70</span>,
+            context: sentence,
+            reasoning: <span class="string">"Qualitative mention with indirect channel keyword"</span>
+        }
+    
+    <span class="comment">// Default: qualitative only</span>
+    <span class="keyword">RETURN</span> {
+        label: <span class="string">"qualitative"</span>,
+        confidence: <span class="number">0.55</span>,
+        context: sentence,
+        reasoning: <span class="string">"Country mentioned without channel-specific context"</span>
+    }</pre>
+
+        <h4>3.2.3 Label Usage Rules</h4>
+        <div class="info">
+            <strong>📌 Critical Rule:</strong> Narrative evidence with <strong>indirect</strong> or <strong>qualitative</strong> labels is used <strong>ONLY</strong> for universe expansion (defining the set of plausible countries), <strong>NOT</strong> for direct weight allocation.
+        </div>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">applyNarrativeEvidence</span>(narrativeLabels, channel):
+    directCountries = {}
+    universeExpansion = <span class="keyword">new</span> <span class="function">Set</span>()
+    
+    <span class="keyword">FOR EACH</span> label <span class="keyword">IN</span> narrativeLabels:
+        <span class="keyword">IF</span> label.type == <span class="string">"direct"</span>:
+            <span class="comment">// Direct labels can be used for allocation</span>
+            directCountries[label.country] = label.weight
+        <span class="keyword">ELSE IF</span> label.type <span class="keyword">IN</span> [<span class="string">"indirect"</span>, <span class="string">"qualitative"</span>]:
+            <span class="comment">// Indirect/qualitative only expand universe</span>
+            universeExpansion.<span class="function">add</span>(label.country)
+    
+    <span class="keyword">RETURN</span> {
+        directAllocation: directCountries,
+        expandedUniverse: universeExpansion
+    }</pre>
+
+        <h3 id="narrative-context">3.3 Context Analysis Rules</h3>
+
+        <h4>3.3.1 Channel-Specific Context Detection</h4>
+        <p>The system uses channel-specific keyword sets to determine context:</p>
+
+        <table>
+            <tr>
+                <th>Channel</th>
+                <th>Primary Keywords</th>
+                <th>Secondary Keywords</th>
+            </tr>
+            <tr>
+                <td><strong>Revenue</strong></td>
+                <td>revenue, sales, market, customers</td>
+                <td>demand, distribution, retail</td>
+            </tr>
+            <tr>
+                <td><strong>Supply</strong></td>
+                <td>manufacturing, supplier, production</td>
+                <td>assembly, sourcing, procurement</td>
+            </tr>
+            <tr>
+                <td><strong>Assets</strong></td>
+                <td>facility, plant, office, property</td>
+                <td>real estate, PP&E, long-lived assets</td>
+            </tr>
+            <tr>
+                <td><strong>Financial</strong></td>
+                <td>debt, currency, FX, banking</td>
+                <td>foreign exchange, credit facility</td>
+            </tr>
+        </table>
+
+        <h4>3.3.2 Ambiguity Scoring</h4>
+        <p>Narrative evidence is scored for ambiguity to determine confidence:</p>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">calculateAmbiguityScore</span>(narrativeEvidence):
+    ambiguityFactors = {
+        multipleInterpretations: <span class="number">0.0</span>,
+        vagueTerritories: <span class="number">0.0</span>,
+        conflictingStatements: <span class="number">0.0</span>
+    }
+    
+    <span class="comment">// Factor 1: Multiple possible interpretations</span>
+    <span class="keyword">IF</span> narrativeEvidence.<span class="function">contains</span>(<span class="string">"other"</span>) <span class="keyword">OR</span> 
+       narrativeEvidence.<span class="function">contains</span>(<span class="string">"various"</span>) <span class="keyword">OR</span>
+       narrativeEvidence.<span class="function">contains</span>(<span class="string">"certain"</span>):
+        ambiguityFactors.multipleInterpretations = <span class="number">0.3</span>
+    
+    <span class="comment">// Factor 2: Vague territorial descriptions</span>
+    vagueTerms = [<span class="string">"region"</span>, <span class="string">"area"</span>, <span class="string">"territory"</span>, <span class="string">"zone"</span>]
+    <span class="keyword">IF</span> <span class="function">containsAny</span>(narrativeEvidence, vagueTerms):
+        ambiguityFactors.vagueTerritories = <span class="number">0.2</span>
+    
+    <span class="comment">// Factor 3: Conflicting statements in same document</span>
+    <span class="keyword">IF</span> <span class="function">detectConflicts</span>(narrativeEvidence):
+        ambiguityFactors.conflictingStatements = <span class="number">0.4</span>
+    
+    totalAmbiguity = <span class="function">sum</span>(ambiguityFactors.<span class="function">values</span>())
+    
+    <span class="keyword">RETURN</span> {
+        score: totalAmbiguity,
+        level: totalAmbiguity &gt; <span class="number">0.5</span> ? <span class="string">"high"</span> : 
+               totalAmbiguity &gt; <span class="number">0.2</span> ? <span class="string">"medium"</span> : <span class="string">"low"</span>,
+        factors: ambiguityFactors
+    }</pre>
+
+        <hr class="section-divider">
+
+        <h2 id="closed-total-ssf">4. Closed-Total / SSF Gating Logic</h2>
+
+        <h3 id="closed-total-def">4.1 Closed-Total Definition & Criteria</h3>
+
+        <h4>4.1.1 What is a "Closed-Total"?</h4>
+        <div class="info">
+            <strong>Definition:</strong> A segment is considered <strong>"closed-total"</strong> when:
+            <ol>
+                <li>The region membership is <strong>fully known</strong> (all countries in the region are identified)</li>
+                <li>The region total is <strong>explicitly stated</strong> in structured evidence</li>
+                <li>The region definition is <strong>unambiguous</strong> (no conflicting interpretations)</li>
+            </ol>
+        </div>
+
+        <h4>4.1.2 Closed-Total Detection Algorithm</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">isClosedTotal</span>(segment, structuredEvidence, narrativeEvidence):
+    <span class="comment">// Criterion 1: Region membership fully known</span>
+    regionName = segment.name
+    
+    <span class="comment">// Check if region is in UN M49 standard definitions</span>
+    <span class="keyword">IF</span> regionName <span class="keyword">IN</span> UN_M49_REGIONS:
+        regionCountries = UN_M49_REGIONS[regionName]
+        membershipKnown = <span class="keyword">TRUE</span>
+    <span class="comment">// Check if narrative provides explicit definition</span>
+    <span class="keyword">ELSE IF</span> narrativeEvidence.<span class="function">hasDefinition</span>(regionName):
+        regionalDef = narrativeEvidence.<span class="function">getDefinition</span>(regionName)
+        regionCountries = regionalDef.countries
+        membershipKnown = regionalDef.confidence == <span class="string">"high"</span>
+    <span class="keyword">ELSE</span>:
+        membershipKnown = <span class="keyword">FALSE</span>
+    
+    <span class="comment">// Criterion 2: Region total explicitly stated</span>
+    totalStated = structuredEvidence.<span class="function">hasExplicitTotal</span>(regionName)
+    
+    <span class="comment">// Criterion 3: Unambiguous definition</span>
+    ambiguityScore = <span class="function">calculateAmbiguityScore</span>(narrativeEvidence)
+    unambiguous = ambiguityScore.level == <span class="string">"low"</span>
+    
+    <span class="comment">// All three criteria must be met</span>
+    isClosedTotal = membershipKnown <span class="keyword">AND</span> totalStated <span class="keyword">AND</span> unambiguous
+    
+    <span class="keyword">RETURN</span> {
+        isClosedTotal: isClosedTotal,
+        membershipKnown: membershipKnown,
+        totalStated: totalStated,
+        unambiguous: unambiguous,
+        regionCountries: regionCountries
+    }</pre>
+
+        <div class="example">
+            <h4>Example: Closed-Total vs. Open-Total</h4>
+            
+            <p><strong>Closed-Total Example (Apple - Japan):</strong></p>
+            <pre>Segment: "Japan"
+Revenue: $24.3B (6.5%)
+Definition: "Japan segment consists of Japan only"
+
+✅ Closed-Total:
+  - Membership known: YES (Japan only)
+  - Total stated: YES (6.5%)
+  - Unambiguous: YES (explicit definition)
+  
+→ Result: 100% of 6.5% allocated to Japan (no SSF needed)</pre>
+
+            <p><strong>Open-Total Example (Apple - Rest of Asia Pacific):</strong></p>
+            <pre>Segment: "Rest of Asia Pacific"
+Revenue: $14.3B (3.8%)
+Definition: "includes Australia, New Zealand, and other Asian countries"
+
+❌ NOT Closed-Total:
+  - Membership known: PARTIAL ("other Asian countries" is vague)
+  - Total stated: YES (3.8%)
+  - Unambiguous: NO ("other" creates ambiguity)
+  
+→ Result: SSF required to distribute 3.8% across plausible countries</pre>
+        </div>
+
+        <h3 id="ssf-gating">4.2 SSF Gating Conditions & Thresholds</h3>
+
+        <h4>4.2.1 When SSF is Triggered</h4>
+        <p>Segment-Specific Fallback (SSF) is triggered when:</p>
+
+        <table>
+            <tr>
+                <th>Condition</th>
+                <th>Description</th>
+                <th>Action</th>
+            </tr>
+            <tr>
+                <td><strong>Region Defined</strong></td>
+                <td>Region membership is fully known (closed-total)</td>
+                <td>Apply SSF within region only</td>
+            </tr>
+            <tr>
+                <td><strong>Partial Evidence</strong></td>
+                <td>Some countries explicitly named, others implicit</td>
+                <td>Apply SSF to residual portion</td>
+            </tr>
+            <tr>
+                <td><strong>Known Zero</strong></td>
+                <td>Certain countries explicitly excluded</td>
+                <td>Exclude from SSF universe</td>
+            </tr>
+        </table>
+
+        <h4>4.2.2 SSF Gating Decision Logic</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">shouldApplySSF</span>(segment, evidence):
+    <span class="comment">// Gate 1: Check if region membership is known</span>
+    closedTotalCheck = <span class="function">isClosedTotal</span>(segment, evidence.structured, evidence.narrative)
+    
+    <span class="keyword">IF</span> closedTotalCheck.isClosedTotal:
+        <span class="comment">// Gate 2: Check if there's a residual portion</span>
+        explicitCountries = evidence.structured.<span class="function">getExplicitCountries</span>(segment)
+        totalExplicit = <span class="function">sum</span>(explicitCountries.<span class="function">values</span>())
+        residualPortion = segment.total - totalExplicit
+        
+        <span class="keyword">IF</span> residualPortion &gt; <span class="number">0.01</span>: <span class="comment">// &gt;1% residual</span>
+            <span class="keyword">RETURN</span> {
+                applySSF: <span class="keyword">TRUE</span>,
+                reason: <span class="string">"Closed-total with residual portion"</span>,
+                ssfUniverse: closedTotalCheck.regionCountries,
+                residualWeight: residualPortion
+            }
+        <span class="keyword">ELSE</span>:
+            <span class="keyword">RETURN</span> {
+                applySSF: <span class="keyword">FALSE</span>,
+                reason: <span class="string">"Closed-total fully allocated"</span>
+            }
+    <span class="keyword">ELSE</span>:
+        <span class="comment">// Not closed-total → use RF or GF instead</span>
+        <span class="keyword">RETURN</span> {
+            applySSF: <span class="keyword">FALSE</span>,
+            reason: <span class="string">"Region membership unknown, use RF/GF"</span>
+        }</pre>
+
+        <h4>4.2.3 SSF Formula</h4>
+        <p>When SSF is triggered, weights are distributed using industry demand proxies:</p>
+
+        <div class="formula">
+            <strong>SSF Weight Formula:</strong><br><br>
+            W<sub>SSF</sub>(c) = [IndustryDemandProxy(c) / Σ IndustryDemandProxy(c)] × W<sub>residual</sub><br><br>
+            where c ∈ R (countries in defined region R)
+        </div>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">applySSF</span>(regionCountries, residualWeight, sector, channel):
+    ssfWeights = {}
+    totalDemandProxy = <span class="number">0.0</span>
+    
+    <span class="comment">// Step 1: Calculate industry demand proxy for each country</span>
+    <span class="keyword">FOR EACH</span> country <span class="keyword">IN</span> regionCountries:
+        demandProxy = <span class="function">getIndustryDemandProxy</span>(country, sector, channel)
+        ssfWeights[country] = demandProxy
+        totalDemandProxy += demandProxy
+    
+    <span class="comment">// Step 2: Normalize and scale by residual weight</span>
+    <span class="keyword">FOR EACH</span> country, demandProxy <span class="keyword">IN</span> ssfWeights:
+        normalizedWeight = (demandProxy / totalDemandProxy) * residualWeight
+        ssfWeights[country] = normalizedWeight
+    
+    <span class="keyword">RETURN</span> ssfWeights</pre>
+
+        <h3 id="gating-flowchart">4.3 Gating Decision Flowchart</h3>
+
+        <div class="flowchart">
+┌─────────────────────────────────────────┐
+│  Start: Process Geographic Segment     │
+└───────────────┬─────────────────────────┘
+                │
+                ▼
+┌─────────────────────────────────────────┐
+│  Q1: Is region membership fully known?  │
+│  (UN M49 or narrative definition)       │
+└───────┬─────────────────────┬───────────┘
+        │ YES                 │ NO
+        ▼                     ▼
+┌───────────────────┐  ┌──────────────────┐
+│  Q2: Is region    │  │  Use RF or GF    │
+│  total stated?    │  │  (See Section 5) │
+└───┬───────────┬───┘  └──────────────────┘
+    │ YES       │ NO
+    ▼           ▼
+┌───────┐  ┌────────────┐
+│  Q3:  │  │  Use RF    │
+│  Any  │  │  (partial) │
+│resid? │  └────────────┘
+└─┬───┬─┘
+  │YES│NO
+  ▼   ▼
+┌─────┐ ┌──────────────┐
+│ SSF │ │ Direct Only  │
+│     │ │ (no fallback)│
+└─────┘ └──────────────┘
+        </div>
+
+        <div class="success">
+            <strong>✅ Key Takeaway:</strong> SSF is <strong>ONLY</strong> applied when:
+            <ol>
+                <li>Region membership is fully known (closed-total)</li>
+                <li>Region total is explicitly stated</li>
+                <li>There is a residual portion (&gt;1%) to allocate</li>
+            </ol>
+            Otherwise, the system falls back to RF (Restricted Fallback) or GF (Global Fallback).
+        </div>
+
+        <hr class="section-divider">
+
+        <h2 id="rf-case-selection">5. RF Case Selection (RF-A / RF-B / RF-C / RF-D)</h2>
+
+        <h3 id="rf-definitions">5.1 RF Case Definitions & Criteria</h3>
+
+        <h4>5.1.1 Overview of RF Cases</h4>
+        <p>Restricted Fallback (RF) is applied when region membership is <strong>partially known or ambiguous</strong>. There are four distinct RF cases:</p>
+
+        <table>
+            <tr>
+                <th>RF Case</th>
+                <th>Trigger Condition</th>
+                <th>Confidence</th>
+                <th>Universe Construction</th>
+            </tr>
+            <tr>
+                <td><strong>RF-A</strong></td>
+                <td>Non-standard region naming (e.g., "EMEA", "International")</td>
+                <td>60-70%</td>
+                <td>Plausible countries based on sector + home country</td>
+            </tr>
+            <tr>
+                <td><strong>RF-B</strong></td>
+                <td>Partial country evidence + incomplete membership</td>
+                <td>65-75%</td>
+                <td>Explicit countries + similar countries</td>
+            </tr>
+            <tr>
+                <td><strong>RF-C</strong></td>
+                <td>Domestic + ambiguous foreign bucket</td>
+                <td>60-70%</td>
+                <td>All countries except home country</td>
+            </tr>
+            <tr>
+                <td><strong>RF-D</strong></td>
+                <td>Multiple ambiguous segments</td>
+                <td>55-65%</td>
+                <td>Union of all plausible countries</td>
+            </tr>
+        </table>
+
+        <h4>5.1.2 RF-A: Non-Standard Region Naming</h4>
+        <div class="info">
+            <strong>RF-A Trigger:</strong> Segment name uses non-standard regional terminology that doesn't match UN M49 definitions.
+        </div>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">isRF_A_Case</span>(segmentName):
+    <span class="comment">// Non-standard region keywords</span>
+    nonStandardRegions = [
+        <span class="string">"EMEA"</span>, <span class="string">"APAC"</span>, <span class="string">"LATAM"</span>, <span class="string">"International"</span>, 
+        <span class="string">"Rest of World"</span>, <span class="string">"Other"</span>, <span class="string">"Foreign"</span>, <span class="string">"Overseas"</span>
+    ]
+    
+    normalizedName = segmentName.<span class="function">toLowerCase</span>().<span class="function">trim</span>()
+    
+    <span class="keyword">FOR EACH</span> keyword <span class="keyword">IN</span> nonStandardRegions:
+        <span class="keyword">IF</span> normalizedName.<span class="function">contains</span>(keyword.<span class="function">toLowerCase</span>()):
+            <span class="keyword">RETURN</span> <span class="keyword">TRUE</span>
+    
+    <span class="keyword">RETURN</span> <span class="keyword">FALSE</span></pre>
+
+        <div class="example">
+            <h4>RF-A Example: "International" Segment</h4>
+            <pre>Segment: "International"
+Revenue: $50M (25%)
+
+Analysis:
+- "International" is non-standard (not in UN M49)
+- No explicit country list provided
+- Could mean any non-domestic country
+
+RF-A Universe Construction:
+1. Exclude home country (e.g., United States)
+2. Include top 30 countries by sector relevance
+3. Apply GDP × SectorPrior weighting
+
+Result: 25% distributed across ~30 plausible countries</pre>
+        </div>
+
+        <h4>5.1.3 RF-B: Partial Country Evidence</h4>
+        <div class="info">
+            <strong>RF-B Trigger:</strong> Some countries are explicitly named, but the list is clearly incomplete (e.g., "China, Japan, and other Asian countries").
+        </div>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">isRF_B_Case</span>(segment, evidence):
+    explicitCountries = evidence.<span class="function">getExplicitCountries</span>(segment)
+    
+    <span class="comment">// Check for "other" or "additional" keywords</span>
+    hasOpenEndedLanguage = segment.description.<span class="function">containsAny</span>([
+        <span class="string">"other"</span>, <span class="string">"additional"</span>, <span class="string">"various"</span>, <span class="string">"certain"</span>, <span class="string">"selected"</span>
+    ])
+    
+    <span class="comment">// Partial evidence: some countries named + open-ended language</span>
+    <span class="keyword">IF</span> explicitCountries.<span class="function">length</span> &gt; <span class="number">0</span> <span class="keyword">AND</span> hasOpenEndedLanguage:
+        <span class="keyword">RETURN</span> <span class="keyword">TRUE</span>
+    
+    <span class="keyword">RETURN</span> <span class="keyword">FALSE</span></pre>
+
+        <div class="example">
+            <h4>RF-B Example: Partial Asia List</h4>
+            <pre>Segment: "Asia Pacific"
+Revenue: $80M (40%)
+Description: "includes China, Japan, and other Asian countries"
+
+Explicit Evidence:
+- China: mentioned
+- Japan: mentioned
+- "other Asian countries": ambiguous
+
+RF-B Universe Construction:
+1. Start with explicit countries: {China, Japan}
+2. Add similar countries in same region: {South Korea, Taiwan, Singapore, ...}
+3. Apply IndustryDemandProxy weighting
+
+Result: 40% distributed with China/Japan getting direct allocation,
+        residual distributed to similar Asian countries</pre>
+        </div>
+
+        <h4>5.1.4 RF-C: Domestic + Foreign Bucket</h4>
+        <div class="info">
+            <strong>RF-C Trigger:</strong> Two-segment structure with one domestic segment and one ambiguous foreign segment.
+        </div>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">isRF_C_Case</span>(segments, homeCountry):
+    <span class="comment">// Check for exactly 2 segments</span>
+    <span class="keyword">IF</span> segments.<span class="function">length</span> != <span class="number">2</span>:
+        <span class="keyword">RETURN</span> <span class="keyword">FALSE</span>
+    
+    <span class="comment">// Check if one segment is home country</span>
+    hasDomestic = <span class="keyword">FALSE</span>
+    hasForeign = <span class="keyword">FALSE</span>
+    
+    <span class="keyword">FOR EACH</span> segment <span class="keyword">IN</span> segments:
+        <span class="keyword">IF</span> segment.name == homeCountry:
+            hasDomestic = <span class="keyword">TRUE</span>
+        <span class="keyword">ELSE IF</span> segment.name.<span class="function">containsAny</span>([<span class="string">"foreign"</span>, <span class="string">"international"</span>, <span class="string">"overseas"</span>]):
+            hasForeign = <span class="keyword">TRUE</span>
+    
+    <span class="keyword">RETURN</span> hasDomestic <span class="keyword">AND</span> hasForeign</pre>
+
+        <div class="example">
+            <h4>RF-C Example: Domestic vs. Foreign</h4>
+            <pre>Segments:
+1. "United States": $120M (60%)
+2. "Foreign": $80M (40%)
+
+Analysis:
+- Domestic segment: clear (United States)
+- Foreign segment: ambiguous (could be any non-US country)
+
+RF-C Universe Construction:
+1. Exclude United States (domestic)
+2. Include all other countries
+3. Apply GDP × SectorPrior weighting
+
+Result: 60% to US (direct), 40% distributed across ~150 foreign countries</pre>
+        </div>
+
+        <h4>5.1.5 RF-D: Multiple Ambiguous Segments</h4>
+        <div class="info">
+            <strong>RF-D Trigger:</strong> Multiple segments with overlapping or unclear boundaries.
+        </div>
+
+        <pre><span class="keyword">FUNCTION</span> <span class="function">isRF_D_Case</span>(segments):
+    ambiguousSegments = <span class="number">0</span>
+    
+    <span class="keyword">FOR EACH</span> segment <span class="keyword">IN</span> segments:
+        <span class="keyword">IF</span> <span class="function">isAmbiguous</span>(segment):
+            ambiguousSegments++
+    
+    <span class="comment">// RF-D: 2+ ambiguous segments</span>
+    <span class="keyword">RETURN</span> ambiguousSegments &gt;= <span class="number">2</span></pre>
+
+        <h3 id="rf-decision-tree">5.2 Case Selection Decision Tree</h3>
+
+        <h4>5.2.1 Complete RF Decision Logic</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">selectRFCase</span>(segment, allSegments, evidence, homeCountry):
+    <span class="comment">// Priority 1: Check RF-A (non-standard region)</span>
+    <span class="keyword">IF</span> <span class="function">isRF_A_Case</span>(segment.name):
+        <span class="keyword">RETURN</span> {
+            case: <span class="string">"RF-A"</span>,
+            reason: <span class="string">"Non-standard region naming"</span>,
+            universe: <span class="function">constructRF_A_Universe</span>(homeCountry, sector)
+        }
+    
+    <span class="comment">// Priority 2: Check RF-C (domestic + foreign)</span>
+    <span class="keyword">IF</span> <span class="function">isRF_C_Case</span>(allSegments, homeCountry):
+        <span class="keyword">RETURN</span> {
+            case: <span class="string">"RF-C"</span>,
+            reason: <span class="string">"Domestic + ambiguous foreign bucket"</span>,
+            universe: <span class="function">constructRF_C_Universe</span>(homeCountry)
+        }
+    
+    <span class="comment">// Priority 3: Check RF-B (partial evidence)</span>
+    <span class="keyword">IF</span> <span class="function">isRF_B_Case</span>(segment, evidence):
+        <span class="keyword">RETURN</span> {
+            case: <span class="string">"RF-B"</span>,
+            reason: <span class="string">"Partial country evidence + incomplete membership"</span>,
+            universe: <span class="function">constructRF_B_Universe</span>(evidence.explicitCountries, sector)
+        }
+    
+    <span class="comment">// Priority 4: Check RF-D (multiple ambiguous)</span>
+    <span class="keyword">IF</span> <span class="function">isRF_D_Case</span>(allSegments):
+        <span class="keyword">RETURN</span> {
+            case: <span class="string">"RF-D"</span>,
+            reason: <span class="string">"Multiple ambiguous segments"</span>,
+            universe: <span class="function">constructRF_D_Universe</span>(allSegments, sector)
+        }
+    
+    <span class="comment">// Default: No RF case applies (use GF instead)</span>
+    <span class="keyword">RETURN</span> {
+        case: <span class="string">"NONE"</span>,
+        reason: <span class="string">"No RF case applies, use GF"</span>
+    }</pre>
+
+        <h4>5.2.2 Visual Decision Tree</h4>
+        <div class="flowchart">
+┌────────────────────────────────────────┐
+│  Start: RF Case Selection             │
+└──────────────┬─────────────────────────┘
+               │
+               ▼
+┌────────────────────────────────────────┐
+│  Q1: Non-standard region name?         │
+│  (EMEA, International, Other, etc.)    │
+└──────┬─────────────────────┬───────────┘
+       │ YES                 │ NO
+       ▼                     ▼
+  ┌────────┐         ┌──────────────────┐
+  │  RF-A  │         │  Q2: Domestic +  │
+  └────────┘         │  Foreign bucket? │
+                     └──────┬───────┬───┘
+                            │ YES   │ NO
+                            ▼       ▼
+                       ┌────────┐  ┌──────────────┐
+                       │  RF-C  │  │  Q3: Partial │
+                       └────────┘  │  evidence?   │
+                                   └──────┬───┬───┘
+                                          │YES│NO
+                                          ▼   ▼
+                                     ┌────────┐ ┌───────┐
+                                     │  RF-B  │ │  Q4:  │
+                                     └────────┘ │Multi? │
+                                                └──┬──┬─┘
+                                                   │Y │N
+                                                   ▼  ▼
+                                              ┌────┐ ┌────┐
+                                              │RF-D│ │ GF │
+                                              └────┘ └────┘
+        </div>
+
+        <h3 id="rf-examples">5.3 Examples for Each RF Case</h3>
+
+        <div class="example">
+            <h4>Complete Examples: All RF Cases</h4>
+            
+            <p><strong>RF-A Example: Tech Company with "EMEA"</strong></p>
+            <pre>Segments:
+- Americas: $200M (50%)
+- EMEA: $120M (30%)
+- Asia Pacific: $80M (20%)
+
+RF-A Analysis for "EMEA":
+- Trigger: "EMEA" is non-standard (not in UN M49)
+- Universe: Europe + Middle East + Africa countries
+- Method: GDP × SectorPrior within EMEA universe
+- Result: 30% distributed across ~60 countries in EMEA region</pre>
+
+            <p><strong>RF-B Example: Pharma Company with Partial List</strong></p>
+            <pre>Segment: "Europe"
+Revenue: $150M (30%)
+Description: "includes Germany, France, UK, and other European countries"
+
+RF-B Analysis:
+- Trigger: Explicit countries + "other European countries"
+- Explicit: {Germany, France, UK}
+- Universe: All European countries
+- Method: Direct allocation to explicit + SSF for residual
+- Result: 
+  - Germany: 10% (direct)
+  - France: 8% (direct)
+  - UK: 7% (direct)
+  - Other EU: 5% (RF-B distributed)</pre>
+
+            <p><strong>RF-C Example: Manufacturing Company</strong></p>
+            <pre>Segments:
+- Domestic (United States): $300M (75%)
+- Foreign: $100M (25%)
+
+RF-C Analysis:
+- Trigger: Two segments (domestic + foreign)
+- Domestic: United States (clear)
+- Foreign: All non-US countries (ambiguous)
+- Universe: ~150 countries excluding US
+- Method: GDP × ManufacturingPrior for foreign countries
+- Result: 75% to US, 25% distributed globally (excluding US)</pre>
+
+            <p><strong>RF-D Example: Conglomerate with Multiple Segments</strong></p>
+            <pre>Segments:
+- North America: $200M (40%) - includes "US, Canada, and select Latin American markets"
+- International: $180M (36%) - "primarily Europe and Asia"
+- Emerging Markets: $120M (24%) - "various developing economies"
+
+RF-D Analysis:
+- Trigger: 3 ambiguous segments with overlapping definitions
+- Universe: Union of all plausible countries from all segments
+- Method: Weighted combination of segment-specific priors
+- Result: Complex distribution considering all segment contexts</pre>
+        </div>
+
+        <hr class="section-divider">
+
+        <h2 id="allocation-routing">6. Direct + Residual Allocation Routing</h2>
+
+        <h3 id="direct-allocation">6.1 Direct Allocation Methodology</h3>
+
+        <h4>6.1.1 What is Direct Allocation?</h4>
+        <div class="info">
+            <strong>Definition:</strong> Direct allocation assigns weights to countries that have <strong>explicit evidence</strong> from structured tables or high-confidence narrative text.
+        </div>
+
+        <h4>6.1.2 Direct Allocation Algorithm</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">allocateDirect</span>(evidence, channel):
+    directAllocation = {}
+    totalAllocated = <span class="number">0.0</span>
+    
+    <span class="comment">// Step 1: Extract direct evidence from structured tables</span>
+    <span class="keyword">IF</span> evidence.structured <span class="keyword">EXISTS</span>:
+        <span class="keyword">FOR EACH</span> country, weight <span class="keyword">IN</span> evidence.structured.countries:
+            <span class="keyword">IF</span> <span class="function">isActualCountry</span>(country):
+                directAllocation[country] = weight
+                totalAllocated += weight
+    
+    <span class="comment">// Step 2: Add direct evidence from narrative (if high confidence)</span>
+    <span class="keyword">IF</span> evidence.narrative <span class="keyword">EXISTS</span>:
+        <span class="keyword">FOR EACH</span> mention <span class="keyword">IN</span> evidence.narrative.countryMentions:
+            <span class="keyword">IF</span> mention.label == <span class="string">"direct"</span> <span class="keyword">AND</span> mention.confidence &gt; <span class="number">0.85</span>:
+                <span class="keyword">IF</span> mention.country <span class="keyword">NOT IN</span> directAllocation:
+                    directAllocation[mention.country] = mention.weight
+                    totalAllocated += mention.weight
+    
+    <span class="comment">// Step 3: Calculate residual portion</span>
+    residualPortion = <span class="number">1.0</span> - totalAllocated
+    
+    <span class="keyword">RETURN</span> {
+        directAllocation: directAllocation,
+        totalAllocated: totalAllocated,
+        residualPortion: residualPortion
+    }</pre>
+
+        <h4>6.1.3 Direct Allocation Rules</h4>
+        <table>
+            <tr>
+                <th>Rule</th>
+                <th>Description</th>
+                <th>Priority</th>
+            </tr>
+            <tr>
+                <td><strong>R1: Structured First</strong></td>
+                <td>Structured table data always takes precedence</td>
+                <td>Highest</td>
+            </tr>
+            <tr>
+                <td><strong>R2: No Overwrite</strong></td>
+                <td>Once a country has direct evidence, don't overwrite</td>
+                <td>High</td>
+            </tr>
+            <tr>
+                <td><strong>R3: Confidence Threshold</strong></td>
+                <td>Narrative evidence must have &gt;85% confidence</td>
+                <td>Medium</td>
+            </tr>
+            <tr>
+                <td><strong>R4: Sum Validation</strong></td>
+                <td>Total direct allocation must be ≤ 100%</td>
+                <td>Critical</td>
+            </tr>
+        </table>
+
+        <h3 id="residual-allocation">6.2 Residual Allocation Methodology</h3>
+
+        <h4>6.2.1 What is Residual Allocation?</h4>
+        <div class="info">
+            <strong>Definition:</strong> Residual allocation distributes the <strong>remaining weight</strong> (after direct allocation) using fallback methods (SSF, RF, or GF).
+        </div>
+
+        <h4>6.2.2 Residual Allocation Decision Logic</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">allocateResidual</span>(residualPortion, segment, evidence, sector, homeCountry, channel):
+    <span class="comment">// No residual to allocate</span>
+    <span class="keyword">IF</span> residualPortion &lt; <span class="number">0.01</span>: <span class="comment">// &lt;1%</span>
+        <span class="keyword">RETURN</span> {}
+    
+    <span class="comment">// Determine fallback type</span>
+    fallbackDecision = <span class="function">decideFallback</span>(
+        segment.name,
+        segment.countries,
+        evidence.narrative.countries,
+        evidence.structured.explicitCountries,
+        sector,
+        homeCountry,
+        channel,
+        residualPortion,
+        evidence.countriesWithEvidence,
+        evidence.knownZeroCountries,
+        evidence.allSegmentCountries
+    )
+    
+    <span class="comment">// Apply appropriate fallback</span>
+    <span class="keyword">IF</span> fallbackDecision.type == <span class="string">"segment-specific"</span>: <span class="comment">// SSF</span>
+        residualAllocation = <span class="function">applySSF</span>(
+            fallbackDecision.regionCountries,
+            residualPortion,
+            sector,
+            channel
+        )
+    <span class="keyword">ELSE IF</span> fallbackDecision.type == <span class="string">"restricted"</span>: <span class="comment">// RF</span>
+        residualAllocation = <span class="function">applyRF</span>(
+            fallbackDecision.restrictedSet,
+            residualPortion,
+            sector,
+            channel
+        )
+    <span class="keyword">ELSE IF</span> fallbackDecision.type == <span class="string">"global"</span>: <span class="comment">// GF</span>
+        residualAllocation = <span class="function">applyGF</span>(
+            residualPortion,
+            sector,
+            evidence.countriesWithEvidence,
+            evidence.knownZeroCountries
+        )
+    <span class="keyword">ELSE</span>:
+        residualAllocation = {}
+    
+    <span class="keyword">RETURN</span> residualAllocation</pre>
+
+        <h4>6.2.3 Residual Allocation Example</h4>
+        <div class="example">
+            <h4>Example: Direct + Residual Allocation</h4>
+            <pre>Channel: Revenue
+Segment: "Asia Pacific"
+Total Weight: 35%
+
+Direct Evidence (from table):
+- China: 15%
+- Japan: 10%
+- South Korea: 5%
+Total Direct: 30%
+
+Residual Calculation:
+Residual = 35% - 30% = 5%
+
+Residual Allocation (SSF):
+Region Countries: {China, Japan, South Korea, India, Australia, Singapore, ...}
+Exclude: {China, Japan, South Korea} (already have direct evidence)
+Apply SSF to: {India, Australia, Singapore, ...}
+
+Final Allocation:
+- China: 15% (direct)
+- Japan: 10% (direct)
+- South Korea: 5% (direct)
+- India: 2% (SSF residual)
+- Australia: 1.5% (SSF residual)
+- Singapore: 1% (SSF residual)
+- Others: 0.5% (SSF residual)
+Total: 35% ✓</pre>
+        </div>
+
+        <h3 id="channel-routing">6.3 Channel-Specific Routing</h3>
+
+        <h4>6.3.1 Revenue Channel Routing</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">routeRevenueChannel</span>(evidence, sector, homeCountry):
+    <span class="comment">// Step 1: Direct allocation from revenue tables</span>
+    directResult = <span class="function">allocateDirect</span>(evidence, <span class="string">"revenue"</span>)
+    
+    <span class="comment">// Step 2: Residual allocation</span>
+    <span class="keyword">IF</span> directResult.residualPortion &gt; <span class="number">0.01</span>:
+        residualAllocation = <span class="function">allocateResidual</span>(
+            directResult.residualPortion,
+            evidence.segment,
+            evidence,
+            sector,
+            homeCountry,
+            <span class="string">"revenue"</span>
+        )
+        
+        <span class="comment">// Step 3: Merge direct + residual</span>
+        finalAllocation = <span class="function">merge</span>(directResult.directAllocation, residualAllocation)
+    <span class="keyword">ELSE</span>:
+        finalAllocation = directResult.directAllocation
+    
+    <span class="comment">// Step 4: Normalize to ensure sum = 1.0</span>
+    finalAllocation = <span class="function">normalize</span>(finalAllocation)
+    
+    <span class="keyword">RETURN</span> finalAllocation</pre>
+
+        <h4>6.3.2 Supply Chain Channel Routing</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">routeSupplyChannel</span>(evidence, sector, homeCountry):
+    <span class="comment">// Step 1: Check for sustainability report (highest priority)</span>
+    <span class="keyword">IF</span> evidence.sustainabilityReport <span class="keyword">EXISTS</span>:
+        <span class="keyword">RETURN</span> <span class="function">allocateFromSustainabilityReport</span>(evidence.sustainabilityReport)
+    
+    <span class="comment">// Step 2: Check for SEC supplier list</span>
+    <span class="keyword">IF</span> evidence.supplierList <span class="keyword">EXISTS</span>:
+        directResult = <span class="function">allocateDirect</span>(evidence, <span class="string">"supply"</span>)
+    <span class="keyword">ELSE</span>:
+        <span class="comment">// Step 3: Use narrative evidence</span>
+        directResult = <span class="function">allocateFromNarrative</span>(evidence.narrative, <span class="string">"supply"</span>)
+    
+    <span class="comment">// Step 4: Residual allocation (RF only, never GF for supply)</span>
+    <span class="keyword">IF</span> directResult.residualPortion &gt; <span class="number">0.01</span>:
+        residualAllocation = <span class="function">allocateResidual</span>(
+            directResult.residualPortion,
+            evidence.segment,
+            evidence,
+            sector,
+            homeCountry,
+            <span class="string">"supply"</span>
+        )
+        finalAllocation = <span class="function">merge</span>(directResult.directAllocation, residualAllocation)
+    <span class="keyword">ELSE</span>:
+        finalAllocation = directResult.directAllocation
+    
+    <span class="keyword">RETURN</span> <span class="function">normalize</span>(finalAllocation)</pre>
+
+        <h4>6.3.3 Physical Assets Channel Routing</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">routeAssetsChannel</span>(evidence, sector, homeCountry):
+    <span class="comment">// Priority 1: Exhibit 21 subsidiaries</span>
+    <span class="keyword">IF</span> evidence.exhibit21 <span class="keyword">EXISTS</span>:
+        <span class="keyword">RETURN</span> <span class="function">allocateFromExhibit21</span>(evidence.exhibit21)
+    
+    <span class="comment">// Priority 2: PP&E geographic table</span>
+    <span class="keyword">IF</span> evidence.ppeTable <span class="keyword">EXISTS</span>:
+        directResult = <span class="function">allocateDirect</span>(evidence, <span class="string">"assets"</span>)
+    <span class="comment">// Priority 3: Sustainability report facilities</span>
+    <span class="keyword">ELSE IF</span> evidence.sustainabilityReport <span class="keyword">EXISTS</span>:
+        <span class="keyword">RETURN</span> <span class="function">allocateFromSustainabilityFacilities</span>(evidence.sustainabilityReport)
+    <span class="comment">// Priority 4: Facility locations (narrative)</span>
+    <span class="keyword">ELSE IF</span> evidence.facilityLocations <span class="keyword">EXISTS</span>:
+        directResult = <span class="function">allocateFromFacilities</span>(evidence.facilityLocations)
+    <span class="keyword">ELSE</span>:
+        <span class="comment">// Priority 5: Fallback</span>
+        <span class="keyword">RETURN</span> <span class="function">applyAssetsFallback</span>(sector, homeCountry)
+    
+    <span class="comment">// Residual allocation if needed</span>
+    <span class="keyword">IF</span> directResult.residualPortion &gt; <span class="number">0.01</span>:
+        residualAllocation = <span class="function">allocateResidual</span>(
+            directResult.residualPortion,
+            evidence.segment,
+            evidence,
+            sector,
+            homeCountry,
+            <span class="string">"assets"</span>
+        )
+        finalAllocation = <span class="function">merge</span>(directResult.directAllocation, residualAllocation)
+    <span class="keyword">ELSE</span>:
+        finalAllocation = directResult.directAllocation
+    
+    <span class="keyword">RETURN</span> <span class="function">normalize</span>(finalAllocation)</pre>
+
+        <h4>6.3.4 Financial Channel Routing</h4>
+        <pre><span class="keyword">FUNCTION</span> <span class="function">routeFinancialChannel</span>(evidence, sector, homeCountry):
+    <span class="comment">// Step 1: Check for debt securities table</span>
+    <span class="keyword">IF</span> evidence.debtTable <span class="keyword">EXISTS</span>:
+        directResult = <span class="function">allocateDirect</span>(evidence, <span class="string">"financial"</span>)
+    <span class="comment">// Step 2: Check for treasury centers</span>
+    <span class="keyword">ELSE IF</span> evidence.treasuryCenters <span class="keyword">EXISTS</span>:
+        directResult = <span class="function">allocateFromTreasuryCenters</span>(evidence.treasuryCenters)
+    <span class="keyword">ELSE</span>:
+        <span class="comment">// Step 3: Global fallback (financial always uses GF, never SSF/RF)</span>
+        <span class="keyword">RETURN</span> <span class="function">applyFinancialGlobalFallback</span>(sector, homeCountry)
+    
+    <span class="comment">// Residual allocation (GF only)</span>
+    <span class="keyword">IF</span> directResult.residualPortion &gt; <span class="number">0.01</span>:
+        residualAllocation = <span class="function">applyGF</span>(
+            directResult.residualPortion,
+            sector,
+            evidence.countriesWithEvidence,
+            evidence.knownZeroCountries
+        )
+        finalAllocation = <span class="function">merge</span>(directResult.directAllocation, residualAllocation)
+    <span class="keyword">ELSE</span>:
+        finalAllocation = directResult.directAllocation
+    
+    <span class="keyword">RETURN</span> <span class="function">normalize</span>(finalAllocation)</pre>
+
+        <h4>6.3.5 Channel Routing Summary</h4>
+        <table>
+            <tr>
+                <th>Channel</th>
+                <th>Direct Evidence Priority</th>
+                <th>Residual Fallback</th>
+                <th>Special Rules</th>
+            </tr>
+            <tr>
+                <td><strong>Revenue</strong></td>
+                <td>1. Revenue table<br>2. Exhibit 21<br>3. Narrative</td>
+                <td>SSF → RF → GF</td>
+                <td>Region definitions from narrative</td>
+            </tr>
+            <tr>
+                <td><strong>Supply</strong></td>
+                <td>1. Sustainability report<br>2. Supplier list<br>3. Narrative</td>
+                <td>SSF → RF (never GF)</td>
+                <td>Supply chain is never global</td>
+            </tr>
+            <tr>
+                <td><strong>Assets</strong></td>
+                <td>1. Exhibit 21<br>2. PP&E table<br>3. Sustainability<br>4. Facilities</td>
+                <td>SSF → RF → GF</td>
+                <td>Exhibit 21 is highest priority</td>
+            </tr>
+            <tr>
+                <td><strong>Financial</strong></td>
+                <td>1. Debt table<br>2. Treasury centers<br>3. Narrative</td>
+                <td>GF only (never SSF/RF)</td>
+                <td>Financial is inherently global</td>
+            </tr>
+        </table>
+
+        <hr class="section-divider">
+
+        <h2 id="appendix">7. Appendix & References</h2>
+
+        <h3>7.1 Key Formulas Summary</h3>
+
+        <div class="formula">
+            <strong>Blended Weight Formula:</strong><br><br>
+            W<sub>blended</sub>(c) = α·W<sub>r</sub>(c) + β·W<sub>s</sub>(c) + γ·W<sub>p</sub>(c) + δ·W<sub>f</sub>(c)<br><br>
+            where α=0.40, β=0.35, γ=0.15, δ=0.10 (default)
+        </div>
+
+        <div class="formula">
+            <strong>SSF Weight Formula:</strong><br><br>
+            W<sub>SSF</sub>(c) = [IndustryDemandProxy(c) / Σ IndustryDemandProxy(c)] × W<sub>residual</sub><br><br>
+            where c ∈ R (countries in defined region R)
+        </div>
+
+        <div class="formula">
+            <strong>RF Weight Formula:</strong><br><br>
+            W<sub>RF</sub>(c) = [GDP(c) × SectorPlausibility(c) / Σ GDP(c) × SectorPlausibility(c)] × W<sub>residual</sub><br><br>
+            where c ∈ P (restricted plausible set P)
+        </div>
+
+        <div class="formula">
+            <strong>GF Weight Formula:</strong><br><br>
+            W<sub>GF</sub>(c) = [GDP(c) × SectorPrior(c) / Σ GDP(c) × SectorPrior(c)] × W<sub>residual</sub><br><br>
+            where c ∈ Global (all countries)
+        </div>
+
+        <h3>7.2 Data Sources</h3>
+        <ul>
+            <li><strong>UN M49 Standard:</strong> https://unstats.un.org/unsd/methodology/m49/</li>
+            <li><strong>IMF World Economic Outlook:</strong> https://www.imf.org/en/Publications/WEO/weo-database</li>
+            <li><strong>SEC EDGAR Database:</strong> https://www.sec.gov/edgar</li>
+            <li><strong>World Bank Data:</strong> https://data.worldbank.org/</li>
+            <li><strong>OECD Statistics:</strong> https://stats.oecd.org/</li>
+        </ul>
+
+        <h3>7.3 Code File References</h3>
+        <ul>
+            <li><code>geographicExposureService.ts</code> - Main service orchestration</li>
+            <li><code>structuredDataIntegrator.ts</code> - Structured evidence parsing</li>
+            <li><code>narrativeParser.ts</code> - Narrative evidence extraction</li>
+            <li><code>fallbackLogic.ts</code> - SSF/RF/GF decision logic</li>
+            <li><code>evidenceHierarchy.ts</code> - 4-tier evidence system</li>
+        </ul>
+
+        <h3>7.4 Glossary</h3>
+        <table>
+            <tr>
+                <th>Term</th>
+                <th>Definition</th>
+            </tr>
+            <tr>
+                <td><strong>Closed-Total</strong></td>
+                <td>A segment where region membership is fully known and total is stated</td>
+            </tr>
+            <tr>
+                <td><strong>SSF</strong></td>
+                <td>Segment-Specific Fallback - used when region membership is fully known</td>
+            </tr>
+            <tr>
+                <td><strong>RF</strong></td>
+                <td>Restricted Fallback - used when geography is partially known or ambiguous</td>
+            </tr>
+            <tr>
+                <td><strong>GF</strong></td>
+                <td>Global Fallback - used when region membership is completely unknown</td>
+            </tr>
+            <tr>
+                <td><strong>Direct Evidence</strong></td>
+                <td>Explicit country-level data from structured tables or high-confidence narrative</td>
+            </tr>
+            <tr>
+                <td><strong>Residual Portion</strong></td>
+                <td>The remaining weight after direct allocation (1.0 - total direct)</td>
+            </tr>
+            <tr>
+                <td><strong>Universe</strong></td>
+                <td>The set of countries eligible for fallback allocation</td>
+            </tr>
+            <tr>
+                <td><strong>IndustryDemandProxy</strong></td>
+                <td>Sector-specific weighting factor based on GDP and industry characteristics</td>
+            </tr>
+        </table>
+
+        <hr class="section-divider">
+
+        <div class="success">
+            <h3>✅ Documentation Complete</h3>
+            <p>This enhanced documentation covers all 5 core topics of Step 1 Decision Logic:</p>
+            <ol>
+                <li>✅ Structured Evidence Parsing (Section 2)</li>
+                <li>✅ Narrative Evidence Parsing & Label Definitions (Section 3)</li>
+                <li>✅ Closed-Total / SSF Gating Logic (Section 4)</li>
+                <li>✅ RF Case Selection (RF-A/B/C/D) (Section 5)</li>
+                <li>✅ Direct + Residual Allocation Routing (Section 6)</li>
+            </ol>
+            <p><strong>Version:</strong> 2.0 (Enhanced) | <strong>Date:</strong> December 27, 2024</p>
+        </div>
+
+    </div>
+</body>
+</html>

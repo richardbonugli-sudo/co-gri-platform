@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "csi:calculate": "tsx src/services/csi-enhancement/cli-phase2.ts calculate",
+    "csi:compare": "tsx src/services/csi-enhancement/cli-phase2.ts compare",
+    "csi:backtest": "tsx src/services/csi-enhancement/cli-phase2.ts backtest",
+    "csi:explain": "tsx src/services/csi-enhancement/cli-phase2.ts explain",
+    "csi:stats-phase2": "tsx src/services/csi-enhancement/cli-phase2.ts stats",
+    "csi:scheduler-phase2": "tsx src/services/csi-enhancement/scheduler-phase2.ts",
+    "csi:migrate-phase2": "psql $DATABASE_URL -f database/migrations/csi-enhancement/002_create_phase2_tables.sql"
+  }
+}

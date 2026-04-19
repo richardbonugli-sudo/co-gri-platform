@@ -1,0 +1,30 @@
+--- a/src/services/v34ComprehensiveIntegration.ts
++++ b/src/services/v34ComprehensiveIntegration.ts
+@@ -11,6 +11,7 @@ import { MultiDimensionalChannelEngine,
+ } from './v34ChannelFormulas';
+ import { dataExpansionService } from './dataExpansionService';
+ import { resolveADRCountry, isKnownADR, getADRCountry } from './adrCountryResolver';
++import { sectorClassificationService } from './sectorClassificationService';
+ import { calculatePoliticalAlignment } from './politicalAlignmentService';
+ 
+ export interface V34AssessmentResult {
+@@ -226,6 +227,10 @@ export async function getCompanyGeographicExposure(
+   console.log(`[v3.4 CRITICAL FIX] Assessment completed for ${enhancedCompanyInfo.name}`);
+   console.log(`[v3.4 CRITICAL FIX] Channel breakdown countries: ${Object.keys(channelBreakdown).join(', ')}`);
+ 
++  // Get the actual sector multiplier based on the sector
++  const sectorMultiplier = sectorClassificationService.getSectorMultiplier(enhancedCompanyInfo.sector);
++  console.log(`[v3.4 SECTOR MULTIPLIER] Sector: ${enhancedCompanyInfo.sector}, Multiplier: ${sectorMultiplier}`);
++
+   // 🚨 FINAL RETURN PREPARATION
+   const finalResult = {
+     company: enhancedCompanyInfo.name,
+@@ -233,7 +238,7 @@ export async function getCompanyGeographicExposure(
+     sector: enhancedCompanyInfo.sector,
+     segments,
+     channelBreakdown,
+-    sectorMultiplier: 1.0,
++    sectorMultiplier: sectorMultiplier,
+     hasVerifiedData: true,
+     dataSource: 'v3.4 Enhanced Multi-Channel Assessment with CRITICAL ADR FIXES + Full Database Integration',
+     homeCountry: enhancedCompanyInfo.adrHomeCountry || enhancedCompanyInfo.country, // FIXED: Use ADR home country

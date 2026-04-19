@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Supply Chain Investigation Report</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
+.container { max-width: 1200px; margin: 0 auto; background: white; padding: 60px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
+h1 { color: #0d5f5f; font-size: 2.5em; margin-bottom: 20px; border-bottom: 4px solid #0d5f5f; padding-bottom: 15px; }
+h2 { color: #0d5f5f; font-size: 2em; margin-top: 40px; margin-bottom: 20px; border-bottom: 2px solid #7fa89f; padding-bottom: 10px; }
+h3 { color: #0a4a4a; font-size: 1.5em; margin-top: 30px; margin-bottom: 15px; }
+p { margin: 15px 0; }
+ul, ol { margin: 15px 0 15px 30px; }
+li { margin: 8px 0; }
+strong { color: #0d5f5f; font-weight: bold; }
+.highlight { background: #fff9e6; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; }
+table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+th { background: #0d5f5f; color: white; font-weight: bold; }
+tr:nth-child(even) { background: #f9f9f9; }
+.print-button { position: fixed; top: 20px; right: 20px; background: #0d5f5f; color: white; border: none; padding: 15px 30px; font-size: 16px; cursor: pointer; border-radius: 5px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); z-index: 1000; }
+.print-button:hover { background: #0a4a4a; }
+@media print { .print-button { display: none; } }
+</style>
+</head>
+<body>
+<button class="print-button" onclick="window.print()">🖨️ Print to PDF</button>
+<div class="container">
+<h1>Supply Chain Channel Investigation Report</h1>
+<h2>Comprehensive Analysis of Data Sources, Fallback Logic, and Symmetry Issues</h2>
+<p><strong>Date:</strong> December 25, 2025<br>
+<strong>Prepared for:</strong> CedarOwl Platform<br>
+<strong>Service:</strong> Predictive Analytics - Supply Chain Channel<br>
+<strong>Investigator:</strong> Strategic Advisory Team</p>
+<hr>
+<h2>Executive Summary</h2>
+<p>This report presents a comprehensive investigation into the Supply Chain channel, addressing three critical concerns:</p>
+<ol>
+<li><strong>Data Source Identification</strong>: What datasets feed the Supply Chain channel?</li>
+<li><strong>Fallback Logic Analysis</strong>: Is the fallback logic generating proxy values or defaulting to zero?</li>
+<li><strong>Symmetry Verification</strong>: Is the max(c→T, T→c) logic properly implemented?</li>
+</ol>
+<div class="highlight">
+<p><strong>Key Findings:</strong></p>
+<ul>
+<li>✅ Data sources identified: Multiple matrices with limited coverage</li>
+<li>⚠️ Fallback logic issue confirmed: Sparse data coverage causes zero defaults</li>
+<li>⚠️ Symmetry partially implemented: Bidirectional lookup exists but limited by data gaps</li>
+</ul>
+</div>
+<h2>Phase 1: Data Source Identification</h2>
+<h3>1.1 Primary Data Source: SUPPLY_CHAIN_INTENSITY Matrix</h3>
+<p><strong>Location:</strong> /workspace/shadcn-ui/src/services/scenarioEngine.ts (lines 301-314)</p>
+<div class="highlight">
+<p><strong>Critical Finding #1: EXTREMELY LIMITED COVERAGE</strong></p>
+<ul>
+<li>Only 4 countries have supply chain data: United States, China, Germany, Japan</li>
+<li>Total country pairs: ~20 bilateral relationships</li>
+<li>Coverage: Less than 5% of the 84 countries</li>
+</ul>
+</div>
+<h2>Phase 2: Fallback Logic Analysis</h2>
+<div class="highlight">
+<p><strong>Critical Finding #4: FALLBACK LOGIC EXISTS BUT IS NEVER TRIGGERED</strong></p>
+<p>If BOTH lookups fail (95%+ of country pairs), supplyChainScore remains 0. No fallback service is called.</p>
+</div>
+<h2>Phase 3: Symmetry and Integration Analysis</h2>
+<div class="highlight">
+<p><strong>Critical Finding #7: SYMMETRY LOGIC IS CORRECT BUT LIMITED BY DATA</strong></p>
+<ul>
+<li>✅ The code checks both directions</li>
+<li>✅ The code applies max(c→T, T→c)</li>
+<li>⚠️ With only 4 countries having data, most lookups return undefined in BOTH directions</li>
+</ul>
+</div>
+<h3>Data Coverage Analysis</h3>
+<p><strong>Total Country Pairs:</strong> 3,486 possible pairs</p>
+<ul>
+<li>Direct data: ~20 pairs (0.57%)</li>
+<li>No data: 3,446 pairs (98.85%)</li>
+</ul>
+<h2>Root Cause Analysis</h2>
+<p>The SUPPLY_CHAIN_INTENSITY matrix covers only 4 countries out of 84 - a <strong>98.85% data gap</strong>.</p>
+<h2>Detailed Findings</h2>
+<h3>Question 1: What datasets are feeding the SupplyChain channel?</h3>
+<p><strong>Answer:</strong> Primary Source is SUPPLY_CHAIN_INTENSITY matrix with 4 countries (US, China, Germany, Japan), ~20 country pairs. It is NOT trade-derived.</p>
+<h3>Question 2: Is the fallback logic generating proxy values or defaulting to zero?</h3>
+<p><strong>Answer:</strong> The fallback logic is <strong>defaulting to zero</strong> when direct data is missing. This is a false zero - it means no data not no relationship.</p>
+<h3>Question 3: Is the supply-chain logic truly symmetric?</h3>
+<p><strong>Answer:</strong> The logic IS symmetric in implementation, but the data coverage gap creates asymmetric results.</p>
+<h2>Recommendations</h2>
+<h3>Immediate Actions</h3>
+<ol>
+<li>Update UI Messaging to explain data limitations</li>
+<li>Add Data Coverage Indicator</li>
+</ol>
+<h3>Short-Term Solutions</h3>
+<ol>
+<li>Implement Proxy Value Generation using trade intensity</li>
+<li>Add Confidence Scores</li>
+</ol>
+<h3>Long-Term Solutions</h3>
+<ol>
+<li>Integrate OECD ICIO Data (60 countries)</li>
+<li>Add WIOD Database</li>
+<li>Implement Machine Learning Estimation</li>
+</ol>
+<h2>Data Coverage Statistics</h2>
+<table>
+<thead>
+<tr><th>Dataset</th><th>Countries</th><th>Pairs</th><th>Coverage</th></tr>
+</thead>
+<tbody>
+<tr><td>BILATERAL_TRADE_INTENSITY</td><td>84</td><td>~300</td><td>8.6%</td></tr>
+<tr><td>SUPPLY_CHAIN_INTENSITY</td><td>4</td><td>~20</td><td>0.57%</td></tr>
+<tr><td>FINANCIAL_LINKAGE_INTENSITY</td><td>4</td><td>~15</td><td>0.43%</td></tr>
+</tbody>
+</table>
+<h2>Conclusion</h2>
+<p>The Supply Chain channel suffers from a critical data coverage gap. Only 4 countries have data, 98.85% of pairs have no data, and no fallback logic generates proxy values.</p>
+<p><strong>Recommended Priority:</strong></p>
+<ol>
+<li>Immediate: Update UI messaging</li>
+<li>Short-term: Implement proxy value generation</li>
+<li>Long-term: Integrate OECD ICIO databases</li>
+</ol>
+<hr>
+<p><strong>Report Prepared By:</strong> Strategic Advisory Team<br>
+<strong>Date:</strong> December 25, 2025<br>
+<strong>Version:</strong> 1.0<br>
+<strong>Status:</strong> Complete - All Three Phases Analyzed</p>
+</div>
+</body>
+</html>

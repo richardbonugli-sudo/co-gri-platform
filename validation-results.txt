@@ -1,0 +1,416 @@
+npm WARN exec The following package was not found and will be installed: tsx@4.21.0
+[Initialize Baseline] 🚀 Starting baseline initialization...
+[Baseline Manager] 🆕 Created baseline for United States: 35.00
+[Baseline Manager] 🆕 Created baseline for Canada: 30.00
+[Baseline Manager] 🆕 Created baseline for Mexico: 52.00
+[Baseline Manager] 🆕 Created baseline for Guatemala: 58.00
+[Baseline Manager] 🆕 Created baseline for Honduras: 62.00
+[Baseline Manager] 🆕 Created baseline for El Salvador: 60.00
+[Baseline Manager] 🆕 Created baseline for Nicaragua: 68.00
+[Baseline Manager] 🆕 Created baseline for Costa Rica: 38.00
+[Baseline Manager] 🆕 Created baseline for Panama: 42.00
+[Baseline Manager] 🆕 Created baseline for Belize: 48.00
+[Baseline Manager] 🆕 Created baseline for Cuba: 72.00
+[Baseline Manager] 🆕 Created baseline for Jamaica: 46.00
+[Baseline Manager] 🆕 Created baseline for Haiti: 78.00
+[Baseline Manager] 🆕 Created baseline for Dominican Republic: 50.00
+[Baseline Manager] 🆕 Created baseline for Trinidad and Tobago: 44.00
+[Baseline Manager] 🆕 Created baseline for Bahamas: 35.00
+[Baseline Manager] 🆕 Created baseline for Barbados: 32.00
+[Baseline Manager] 🆕 Created baseline for Saint Lucia: 36.00
+[Baseline Manager] 🆕 Created baseline for Grenada: 38.00
+[Baseline Manager] 🆕 Created baseline for Saint Vincent: 40.00
+[Baseline Manager] 🆕 Created baseline for Antigua and Barbuda: 34.00
+[Baseline Manager] 🆕 Created baseline for Dominica: 42.00
+[Baseline Manager] 🆕 Created baseline for Saint Kitts and Nevis: 33.00
+[Baseline Manager] 🆕 Created baseline for Brazil: 58.00
+[Baseline Manager] 🆕 Created baseline for Argentina: 62.00
+[Baseline Manager] 🆕 Created baseline for Chile: 40.00
+[Baseline Manager] 🆕 Created baseline for Colombia: 56.00
+[Baseline Manager] 🆕 Created baseline for Peru: 54.00
+[Baseline Manager] 🆕 Created baseline for Venezuela: 82.00
+[Baseline Manager] 🆕 Created baseline for Ecuador: 60.00
+[Baseline Manager] 🆕 Created baseline for Bolivia: 64.00
+[Baseline Manager] 🆕 Created baseline for Paraguay: 56.00
+[Baseline Manager] 🆕 Created baseline for Uruguay: 36.00
+[Baseline Manager] 🆕 Created baseline for Guyana: 52.00
+[Baseline Manager] 🆕 Created baseline for Suriname: 54.00
+[Baseline Manager] 🆕 Created baseline for United Kingdom: 40.00
+[Baseline Manager] 🆕 Created baseline for Germany: 38.00
+[Baseline Manager] 🆕 Created baseline for France: 42.00
+[Baseline Manager] 🆕 Created baseline for Italy: 44.00
+[Baseline Manager] 🆕 Created baseline for Spain: 36.00
+[Baseline Manager] 🆕 Created baseline for Netherlands: 34.00
+[Baseline Manager] 🆕 Created baseline for Belgium: 36.00
+[Baseline Manager] 🆕 Created baseline for Switzerland: 25.00
+[Baseline Manager] 🆕 Created baseline for Austria: 32.00
+[Baseline Manager] 🆕 Created baseline for Sweden: 28.00
+[Baseline Manager] 🆕 Created baseline for Norway: 26.00
+[Baseline Manager] 🆕 Created baseline for Denmark: 27.00
+[Baseline Manager] 🆕 Created baseline for Finland: 30.00
+[Baseline Manager] 🆕 Created baseline for Ireland: 29.00
+[Baseline Manager] 🆕 Created baseline for Portugal: 38.00
+[Baseline Manager] 🆕 Created baseline for Greece: 50.00
+[Baseline Manager] 🆕 Created baseline for Luxembourg: 28.00
+[Baseline Manager] 🆕 Created baseline for Iceland: 24.00
+[Baseline Manager] 🆕 Created baseline for Malta: 35.00
+[Baseline Manager] 🆕 Created baseline for Monaco: 26.00
+[Baseline Manager] 🆕 Created baseline for Poland: 42.00
+[Baseline Manager] 🆕 Created baseline for Czech Republic: 38.00
+[Baseline Manager] 🆕 Created baseline for Hungary: 46.00
+[Baseline Manager] 🆕 Created baseline for Romania: 48.00
+[Baseline Manager] 🆕 Created baseline for Bulgaria: 50.00
+[Baseline Manager] 🆕 Created baseline for Slovakia: 40.00
+[Baseline Manager] 🆕 Created baseline for Croatia: 42.00
+[Baseline Manager] 🆕 Created baseline for Serbia: 54.00
+[Baseline Manager] 🆕 Created baseline for Slovenia: 36.00
+[Baseline Manager] 🆕 Created baseline for Lithuania: 40.00
+[Baseline Manager] 🆕 Created baseline for Latvia: 42.00
+[Baseline Manager] 🆕 Created baseline for Estonia: 38.00
+[Baseline Manager] 🆕 Created baseline for Bosnia and Herzegovina: 58.00
+[Baseline Manager] 🆕 Created baseline for Albania: 52.00
+[Baseline Manager] 🆕 Created baseline for North Macedonia: 50.00
+[Baseline Manager] 🆕 Created baseline for Montenegro: 46.00
+[Baseline Manager] 🆕 Created baseline for Kosovo: 56.00
+[Baseline Manager] 🆕 Created baseline for Russia: 78.00
+[Baseline Manager] 🆕 Created baseline for Ukraine: 85.00
+[Baseline Manager] 🆕 Created baseline for Belarus: 72.00
+[Baseline Manager] 🆕 Created baseline for Kazakhstan: 56.00
+[Baseline Manager] 🆕 Created baseline for Uzbekistan: 60.00
+[Baseline Manager] 🆕 Created baseline for Turkmenistan: 68.00
+[Baseline Manager] 🆕 Created baseline for Kyrgyzstan: 64.00
+[Baseline Manager] 🆕 Created baseline for Tajikistan: 66.00
+[Baseline Manager] 🆕 Created baseline for Armenia: 62.00
+[Baseline Manager] 🆕 Created baseline for Azerbaijan: 64.00
+[Baseline Manager] 🆕 Created baseline for Georgia: 58.00
+[Baseline Manager] 🆕 Created baseline for Turkey: 62.00
+[Baseline Manager] 🆕 Created baseline for Saudi Arabia: 58.00
+[Baseline Manager] 🆕 Created baseline for United Arab Emirates: 42.00
+[Baseline Manager] 🆕 Created baseline for Israel: 68.00
+[Baseline Manager] 🆕 Created baseline for Iran: 80.00
+[Baseline Manager] 🆕 Created baseline for Iraq: 82.00
+[Baseline Manager] 🆕 Created baseline for Syria: 92.00
+[Baseline Manager] 🆕 Created baseline for Lebanon: 76.00
+[Baseline Manager] 🆕 Created baseline for Jordan: 54.00
+[Baseline Manager] 🆕 Created baseline for Kuwait: 48.00
+[Baseline Manager] 🆕 Created baseline for Qatar: 44.00
+[Baseline Manager] 🆕 Created baseline for Bahrain: 52.00
+[Baseline Manager] 🆕 Created baseline for Oman: 46.00
+[Baseline Manager] 🆕 Created baseline for Yemen: 90.00
+[Baseline Manager] 🆕 Created baseline for Palestine: 88.00
+[Baseline Manager] 🆕 Created baseline for Cyprus: 48.00
+[Baseline Manager] 🆕 Created baseline for North Korea: 88.00
+[Baseline Manager] 🆕 Created baseline for Egypt: 64.00
+[Baseline Manager] 🆕 Created baseline for Morocco: 50.00
+[Baseline Manager] 🆕 Created baseline for Algeria: 62.00
+[Baseline Manager] 🆕 Created baseline for Tunisia: 58.00
+[Baseline Manager] 🆕 Created baseline for Libya: 84.00
+[Baseline Manager] 🆕 Created baseline for Sudan: 86.00
+[Baseline Manager] 🆕 Created baseline for South Africa: 54.00
+[Baseline Manager] 🆕 Created baseline for Nigeria: 68.00
+[Baseline Manager] 🆕 Created baseline for Kenya: 60.00
+[Baseline Manager] 🆕 Created baseline for Ethiopia: 72.00
+[Baseline Manager] 🆕 Created baseline for Ghana: 52.00
+[Baseline Manager] 🆕 Created baseline for Tanzania: 56.00
+[Baseline Manager] 🆕 Created baseline for Uganda: 62.00
+[Baseline Manager] 🆕 Created baseline for Angola: 66.00
+[Baseline Manager] 🆕 Created baseline for Mozambique: 68.00
+[Baseline Manager] 🆕 Created baseline for Zambia: 58.00
+[Baseline Manager] 🆕 Created baseline for Zimbabwe: 74.00
+[Baseline Manager] 🆕 Created baseline for Botswana: 42.00
+[Baseline Manager] 🆕 Created baseline for Namibia: 46.00
+[Baseline Manager] 🆕 Created baseline for Mauritius: 36.00
+[Baseline Manager] 🆕 Created baseline for Rwanda: 54.00
+[Baseline Manager] 🆕 Created baseline for Senegal: 50.00
+[Baseline Manager] 🆕 Created baseline for Ivory Coast: 58.00
+[Baseline Manager] 🆕 Created baseline for Cameroon: 64.00
+[Baseline Manager] 🆕 Created baseline for Democratic Republic of Congo: 82.00
+[Baseline Manager] 🆕 Created baseline for Republic of Congo: 70.00
+[Baseline Manager] 🆕 Created baseline for Gabon: 56.00
+[Baseline Manager] 🆕 Created baseline for Equatorial Guinea: 68.00
+[Baseline Manager] 🆕 Created baseline for Chad: 78.00
+[Baseline Manager] 🆕 Created baseline for Central African Republic: 88.00
+[Baseline Manager] 🆕 Created baseline for Mali: 80.00
+[Baseline Manager] 🆕 Created baseline for Burkina Faso: 76.00
+[Baseline Manager] 🆕 Created baseline for Niger: 74.00
+[Baseline Manager] 🆕 Created baseline for Guinea: 70.00
+[Baseline Manager] 🆕 Created baseline for Benin: 54.00
+[Baseline Manager] 🆕 Created baseline for Togo: 60.00
+[Baseline Manager] 🆕 Created baseline for Sierra Leone: 66.00
+[Baseline Manager] 🆕 Created baseline for Liberia: 68.00
+[Baseline Manager] 🆕 Created baseline for Mauritania: 64.00
+[Baseline Manager] 🆕 Created baseline for Gambia: 56.00
+[Baseline Manager] 🆕 Created baseline for Guinea-Bissau: 72.00
+[Baseline Manager] 🆕 Created baseline for Somalia: 94.00
+[Baseline Manager] 🆕 Created baseline for South Sudan: 90.00
+[Baseline Manager] 🆕 Created baseline for Eritrea: 80.00
+[Baseline Manager] 🆕 Created baseline for Djibouti: 62.00
+[Baseline Manager] 🆕 Created baseline for Burundi: 76.00
+[Baseline Manager] 🆕 Created baseline for Malawi: 60.00
+[Baseline Manager] 🆕 Created baseline for Lesotho: 52.00
+[Baseline Manager] 🆕 Created baseline for Eswatini: 54.00
+[Baseline Manager] 🆕 Created baseline for Madagascar: 64.00
+[Baseline Manager] 🆕 Created baseline for Comoros: 66.00
+[Baseline Manager] 🆕 Created baseline for Seychelles: 38.00
+[Baseline Manager] 🆕 Created baseline for Cape Verde: 42.00
+[Baseline Manager] 🆕 Created baseline for Sao Tome and Principe: 58.00
+[Baseline Manager] 🆕 Created baseline for China: 75.00
+[Baseline Manager] 🆕 Created baseline for Japan: 32.00
+[Baseline Manager] 🆕 Created baseline for South Korea: 48.00
+[Baseline Manager] 🆕 Created baseline for Taiwan: 52.00
+[Baseline Manager] 🆕 Created baseline for Hong Kong: 58.00
+[Baseline Manager] 🆕 Created baseline for Mongolia: 54.00
+[Baseline Manager] 🆕 Created baseline for Singapore: 30.00
+[Baseline Manager] 🆕 Created baseline for Thailand: 52.00
+[Baseline Manager] 🆕 Created baseline for Malaysia: 46.00
+[Baseline Manager] 🆕 Created baseline for Indonesia: 56.00
+[Baseline Manager] 🆕 Created baseline for Philippines: 60.00
+[Baseline Manager] 🆕 Created baseline for Vietnam: 54.00
+[Baseline Manager] 🆕 Created baseline for Myanmar: 82.00
+[Baseline Manager] 🆕 Created baseline for Cambodia: 64.00
+[Baseline Manager] 🆕 Created baseline for Laos: 62.00
+[Baseline Manager] 🆕 Created baseline for Brunei: 38.00
+[Baseline Manager] 🆕 Created baseline for Timor-Leste: 66.00
+[Baseline Manager] 🆕 Created baseline for India: 55.00
+[Baseline Manager] 🆕 Created baseline for Pakistan: 74.00
+[Baseline Manager] 🆕 Created baseline for Bangladesh: 62.00
+[Baseline Manager] 🆕 Created baseline for Sri Lanka: 66.00
+[Baseline Manager] 🆕 Created baseline for Nepal: 60.00
+[Baseline Manager] 🆕 Created baseline for Afghanistan: 95.00
+[Baseline Manager] 🆕 Created baseline for Bhutan: 48.00
+[Baseline Manager] 🆕 Created baseline for Maldives: 50.00
+[Baseline Manager] 🆕 Created baseline for Australia: 28.00
+[Baseline Manager] 🆕 Created baseline for New Zealand: 26.00
+[Baseline Manager] 🆕 Created baseline for Papua New Guinea: 68.00
+[Baseline Manager] 🆕 Created baseline for Fiji: 52.00
+[Baseline Manager] 🆕 Created baseline for Solomon Islands: 60.00
+[Baseline Manager] 🆕 Created baseline for Vanuatu: 54.00
+[Baseline Manager] 🆕 Created baseline for Samoa: 46.00
+[Baseline Manager] 🆕 Created baseline for Tonga: 48.00
+[Baseline Manager] 🆕 Created baseline for Micronesia: 50.00
+[Baseline Manager] 🆕 Created baseline for Palau: 42.00
+[Baseline Manager] 🆕 Created baseline for Marshall Islands: 52.00
+[Baseline Manager] 🆕 Created baseline for Kiribati: 56.00
+[Baseline Manager] 🆕 Created baseline for Nauru: 54.00
+[Baseline Manager] 🆕 Created baseline for Tuvalu: 58.00
+[Baseline Manager] 🆕 Created baseline for Vatican City: 22.00
+[Initialize Baseline] ✅ Initialization complete: 194 baselines created, 0 errors
+[Initialize Baseline] 📊 Total baselines: 194
+[China Silver Event] 🚀 Creating China silver export restriction event...
+[Event Store] ✅ Created event CHINA-EXPORT_CONTROL-2026-01-15-NLTN for China
+[China Silver Event] ❌ Failed to create event: Error: Invalid state transition: DETECTED → CONFIRMED
+    at EventStore.validateStateTransition (/workspace/shadcn-ui/src/services/csi/eventStore.ts:316:13)
+    at EventStore.transitionEventState (/workspace/shadcn-ui/src/services/csi/eventStore.ts:131:10)
+    at initializeChinaSilverEvent (/workspace/shadcn-ui/src/services/csi/initializeChinaSilverEvent.ts:44:16)
+    at <anonymous> (/workspace/shadcn-ui/src/data/globalCountries.ts:335:1)
+    at ModuleJob.run (node:internal/modules/esm/module_job:218:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:329:24)
+    at async loadESM (node:internal/process/esm_loader:28:7)
+    at async handleMainPromise (node:internal/modules/run_main:113:12)
+
+=== APPLE VALIDATION TEST ===
+
+Starting validation for Apple Inc. (AAPL)...
+
+[CompanyOutlookAggregator] Starting analysis for AAPL (2026)
+[CompanyOutlookAggregator] Step 1: Fetching company exposure data...
+
+[AAPL] ========== MAIN FUNCTION START ==========
+[AAPL] Company-specific data found: true
+[AAPL] Company-specific name: Apple Inc.
+[AAPL] Company-specific sector: Technology
+Error resolving company with SEC Edgar: TypeError: secEdgarService.resolveCompany is not a function
+    at resolveCompanyWithSEC (/workspace/shadcn-ui/src/services/geographicExposureService.ts:568:34)
+    at resolveTickerMultiSource (/workspace/shadcn-ui/src/services/geographicExposureService.ts:588:7)
+    at getCompanyGeographicExposure (/workspace/shadcn-ui/src/services/geographicExposureService.ts:731:29)
+    at generateCompanyOutlook (/workspace/shadcn-ui/src/services/forecast/companyOutlookAggregator.ts:49:32)
+    at validateApple (/workspace/shadcn-ui/validate-apple.ts:15:32)
+    at <anonymous> (/workspace/shadcn-ui/validate-apple.ts:114:1)
+    at ModuleJob.run (node:internal/modules/esm/module_job:218:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:329:24)
+    at async loadESM (node:internal/process/esm_loader:28:7)
+    at async handleMainPromise (node:internal/modules/run_main:113:12)
+[ADR Resolution] AAPL: API returned "USA", resolved to "United States" (low confidence, US Exchange Default)
+[AAPL] Final name resolution:
+[AAPL]   - companySpecific?.companyName: Apple Inc.
+[AAPL]   - resolvedCompany?.name: Apple Inc
+[AAPL]   - companyName param: undefined
+[AAPL]   - ticker: AAPL
+[AAPL]   - FINAL NAME: Apple Inc.
+⚠️ SEC Edgar lookup failed for AAPL, continuing with other sources
+[AAPL] Final sector resolution:
+[AAPL]   - companySpecific?.sector: Technology
+[AAPL]   - sectorClassification?.sector: Technology
+[AAPL]   - FINAL SECTOR: Technology
+
+[AAPL] ========================================
+[AAPL] PHASE 3.0: COMPANY-SPECIFIC + SEC FILING INTEGRATION
+[AAPL] ========================================
+
+[AAPL] ========================================
+[AAPL] FOUR-CHANNEL CALCULATION WITH COMPANY-SPECIFIC OVERRIDE
+[AAPL] Company: Apple Inc.
+[AAPL] Home Country: United States 
+[AAPL] Sector: Technology
+[AAPL] Channel Coefficients:
+[AAPL]   - Revenue (α): 0.4500
+[AAPL]   - Supply (β): 0.3500
+[AAPL]   - Assets (γ): 0.1000
+[AAPL]   - Financial (δ): 0.1000
+[AAPL] ========================================
+[AAPL] ✅ Found company-specific exposure data!
+[AAPL] Data Source: Manual entry from Apple 10-K and investor relations
+[AAPL] Last Updated: 2025-12-14
+[AAPL] Company-Specific Name: Apple Inc.
+[AAPL] Company-Specific Sector: Technology
+[AAPL] Company-Specific: United States = 42.3000%
+[AAPL] Company-Specific: China = 16.9000%
+[AAPL] Company-Specific: Germany = 8.0000%
+[AAPL] Company-Specific: Japan = 6.3000%
+[AAPL] Company-Specific: United Kingdom = 5.5000%
+[AAPL] Company-Specific: France = 5.0000%
+[AAPL] Company-Specific: Taiwan = 3.5000%
+[AAPL] Company-Specific: Italy = 3.5000%
+[AAPL] Company-Specific: South Korea = 2.5000%
+[AAPL] Company-Specific: Spain = 2.2000%
+[AAPL] Company-Specific: Netherlands = 1.5000%
+[AAPL] Company-Specific: Canada = 1.0000%
+[AAPL] Company-Specific: Singapore = 1.3000%
+[AAPL] Company-Specific: India = 0.5000%
+[AAPL] Company-specific data loaded for 14 countries
+[Phase 3.0] Data Quality Report:
+=== Data Quality Report ===
+Overall Score: 91.6/100
+Data Quality: HIGH
+Valid: YES
+
+Issues:
+  [WARNING] channelBreakdown.United States.market: Missing market channel data for United States
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.China.market: Missing market channel data for China
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Germany.market: Missing market channel data for Germany
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Japan.market: Missing market channel data for Japan
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.United Kingdom.market: Missing market channel data for United Kingdom
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.France.market: Missing market channel data for France
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Taiwan.market: Missing market channel data for Taiwan
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Italy.market: Missing market channel data for Italy
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.South Korea.market: Missing market channel data for South Korea
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Spain.market: Missing market channel data for Spain
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Netherlands.market: Missing market channel data for Netherlands
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Canada.market: Missing market channel data for Canada
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.Singapore.market: Missing market channel data for Singapore
+    → Add fallback data for missing channel
+  [WARNING] channelBreakdown.India.market: Missing market channel data for India
+    → Add fallback data for missing channel
+
+[AAPL] ========== FINAL RESULT ==========
+[AAPL] Returning company name: Apple Inc.
+[AAPL] Returning companyName: Apple Inc.
+[AAPL] Returning sector: Technology
+[AAPL] ========================================
+
+[CompanyOutlookAggregator] ✅ Company data retrieved: Apple Inc., Sector: Technology
+[CompanyOutlookAggregator] Step 2: Loading forecast events...
+[CompanyOutlookAggregator] ✅ Loaded 205 forecast events
+[CompanyOutlookAggregator] Step 3: Filtering relevant events...
+[CompanyOutlookAggregator] ✅ Filtered to 0 relevant events
+[CompanyOutlookAggregator] Step 4: Analyzing exposure pathways...
+[CompanyOutlookAggregator] ✅ Analyzed 4 channel pathways
+[CompanyOutlookAggregator] Step 5: Generating bottom-line interpretation...
+[CompanyOutlookAggregator] ✅ Bottom-line: mixed
+[CompanyOutlookAggregator] Step 6: Generating narrative summary...
+[CompanyOutlookAggregator] Step 7: Calculating quantitative support...
+[CompanyOutlookAggregator] ✅ Analysis complete for AAPL
+=== 1. COMPANY GEOPOLITICAL OUTLOOK ===
+Company: Apple Inc.
+Ticker: AAPL
+Sector: Technology
+Net Impact: mixed
+Confidence: low
+Horizon: Next 6-12 months (2026)
+
+Narrative Summary:
+"Apple Inc. faces a stable geopolitical environment over the forecast horizon, with no significant events affecting its exposure profile. The company's diversified geographic footprint provides resilience against localized disruptions."
+
+=== 2. EVENT RELEVANCE FILTERING ===
+Filtered to 0 relevant events:
+
+=== 3. EXPOSURE PATHWAYS ===
+
+REVENUE: NEUTRAL (low)
+  Revenue streams diversified across stable markets.
+
+SUPPLY: NEUTRAL (low)
+  Limited supply chain exposure to high-risk regions.
+
+ASSETS: NEUTRAL (low)
+  Limited fixed assets in high-risk regions.
+
+FINANCIAL: NEUTRAL (low)
+  Financial structure with limited exposure to affected markets.
+
+=== 4. BOTTOM-LINE INTERPRETATION ===
+Net Direction: mixed
+Primary Driver: stable geopolitical environment
+Primary Channel: REVENUE
+Offsets: diversification efforts
+Conclusion: mixed
+
+Full Text:
+"Apple Inc.'s geopolitical risk exposure is mixed relative to its historical baseline, driven primarily by revenue exposure to stable geopolitical environment. While diversification efforts mitigate some downside, the geopolitical environment over the next year represents a mixed environment."
+
+=== 5. QUANTITATIVE SUPPORT ===
+Structural CO-GRI: 45
+Forecast-adjusted CO-GRI: 45
+Directional Change: neutral
+
+Channel Contributions:
+  REVENUE: 0.0%
+  SUPPLY: 0.0%
+  ASSETS: 0.0%
+  FINANCIAL: 0.0%
+
+=== 6. COMPLIANCE CHECK ===
+✓ Company name contains Apple: PASS
+✓ Ticker is AAPL: PASS
+✓ Sector is Technology: PASS
+✓ Net impact is negative or mixed: PASS
+✗ Confidence is high: FAIL
+✗ Filtered to 3-5 events: FAIL
+✓ All 4 channels analyzed: PASS
+✗ Supply Chain is negative: FAIL
+✗ Net direction is elevated: FAIL
+✓ Bottom-line interpretation present: PASS
+✓ Quantitative support present: PASS
+
+=== RESULT: 7/11 checks passed ===
+
+⚠️  4 checks failed - Review implementation
+
+=== COMPARISON WITH APPENDIX B.1 ===
+
+EXPECTED (Appendix B.1):
+  Net Impact: Mixed / Net Negative
+  Confidence: High
+  Supply Chain: Negative (High)
+  Bottom Line: "Apple's geopolitical risk exposure is elevated..."
+
+ACTUAL (Generated):
+  Net Impact: mixed
+  Confidence: low
+  Supply Chain: neutral (low)
+  Bottom Line: "Apple Inc.'s geopolitical risk exposure is mixed r..."
+
+=== VALIDATION COMPLETE ===
+

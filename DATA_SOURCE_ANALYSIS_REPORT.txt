@@ -1,0 +1,97 @@
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                    DATA SOURCE ANALYSIS REPORT                                 ║
+║                    Integrated Company Database                                 ║
+║                    Generated: 2025-12-19T12:44:00.403Z                      ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+═══════════════════════════════════════════════════════════════════════════════
+                              EXECUTIVE SUMMARY
+═══════════════════════════════════════════════════════════════════════════════
+
+Total Companies in Database:        509
+
+Data Source Breakdown:
+  ✅ SEC EDGAR Data:                3 (0.59%)
+  ⚠️  Fallback Templates:           506 (99.41%)
+
+═══════════════════════════════════════════════════════════════════════════════
+                         DATA COVERAGE BY SECTOR
+═══════════════════════════════════════════════════════════════════════════════
+
+Technology:
+  Total Companies:     79
+  ✅ SEC Data:         2 (2.5%)
+  ⚠️  Fallback:        77
+
+Industrials:
+  Total Companies:     73
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        73
+
+Financial Services:
+  Total Companies:     67
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        67
+
+Healthcare:
+  Total Companies:     65
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        65
+
+Consumer Discretionary:
+  Total Companies:     52
+  ✅ SEC Data:         1 (1.9%)
+  ⚠️  Fallback:        51
+
+Consumer Staples:
+  Total Companies:     34
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        34
+
+Materials:
+  Total Companies:     30
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        30
+
+Real Estate:
+  Total Companies:     30
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        30
+
+Utilities:
+  Total Companies:     30
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        30
+
+Energy:
+  Total Companies:     25
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        25
+
+Communication Services:
+  Total Companies:     24
+  ✅ SEC Data:         0 (0.0%)
+  ⚠️  Fallback:        24
+
+
+═══════════════════════════════════════════════════════════════════════════════
+                    COMPANIES WITH SEC EDGAR DATA
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. MSFT   - Microsoft Corporation                              [Technology]
+  2. TSLA   - Tesla Inc                                          [Consumer Discretionary]
+  3. AAPL   - Apple Inc.                                         [Technology]
+
+═══════════════════════════════════════════════════════════════════════════════
+                              RECOMMENDATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+Current SEC Data Coverage: 0.59%
+
+To improve data quality:
+1. Batch process SEC 10-K filings for S&P 500 companies
+2. Extract geographic exposure data from NASDAQ 100 companies
+3. Implement quarterly 10-Q monitoring for existing companies
+
+═══════════════════════════════════════════════════════════════════════════════

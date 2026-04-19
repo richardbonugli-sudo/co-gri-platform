@@ -1,0 +1,187 @@
+@startuml GDP Data Initial Load
+
+skinparam backgroundColor #1a1a1a
+skinparam sequenceMessageAlign center
+skinparam participantBackgroundColor #2a2a2a
+skinparam participantBorderColor #4a4a4a
+skinparam actorBackgroundColor #3a3a3a
+skinparam actorBorderColor #5a5a5a
+
+actor User
+participant "GlobalRiskIndex\n(UI)" as UI
+participant "globalCSIStore\n(State)" as Store
+participant "GDPWeightedCalculator" as Calc
+participant "GDPDataService" as GDPService
+participant "World Bank API" as API
+participant "Static GDP File" as Static
+database "IndexedDB\nCache" as Cache
+
+User -> UI: Load Dashboard
+activate UI
+
+UI -> Store: subscribe()
+activate Store
+
+Store -> Store: Check if GDP data loaded
+note right: First load check
+
+Store -> GDPService: loadGDPData()
+activate GDPService
+
+GDPService -> Cache: getCachedData()
+activate Cache
+Cache --> GDPService: null (first load)
+deactivate Cache
+
+GDPService -> API: GET /v2/country/{codes}/indicator/NY.GDP.MKTP.PP.CD
+activate API
+note right
+  Request Parameters:
+  - format: json
+  - date: 2023
+  - per_page: 500
+  - countries: USA;CHN;IND;...
+end note
+
+alt API Success
+  API --> GDPService: GDP data (JSON)
+  deactivate API
+  
+  GDPService -> GDPService: parseResponse()
+  note right
+    Parse World Bank JSON:
+    [{
+      country: {value: "United States"},
+      countryiso3code: "USA",
+      value: 27360935000000,
+      date: "2023"
+    }, ...]
+  end note
+  
+  GDPService -> GDPService: calculateWeights()
+  note right
+    Calculate weights:
+    total_gdp = Σ(GDP_i)
+    w_i = GDP_i / total_gdp
+    
+    Example:
+    USA: 27.4T / 138.5T = 0.1976
+    CHN: 33.0T / 138.5T = 0.2383
+  end note
+  
+  GDPService -> Cache: saveData(gdpDataset)
+  activate Cache
+  Cache --> GDPService: saved
+  deactivate Cache
+  
+else API Failure
+  API --> GDPService: Error (Network/Timeout)
+  deactivate API
+  
+  GDPService -> Static: loadStaticData()
+  activate Static
+  Static --> GDPService: GDP_DATA_2023
+  deactivate Static
+  
+  note right: Fallback to static file
+end
+
+GDPService --> Store: GlobalGDPDataset
+deactivate GDPService
+note right
+  Dataset includes:
+  - total_gdp: 138.5T
+  - reference_year: 2023
+  - country_data: [195 countries]
+  - coverage: 98.5%
+end note
+
+Store -> Calc: calculateGDPWeightedGlobalCSI(now, "30D")
+activate Calc
+
+Calc -> GDPService: getGDPWeights(2023)
+activate GDPService
+GDPService --> Calc: GDPWeightMap
+deactivate GDPService
+note right
+  Map<string, number>
+  "United States" -> 0.1976
+  "China" -> 0.2383
+  ...
+end note
+
+Calc -> Calc: Calculate for each country
+loop For each country in GLOBAL_COUNTRIES (195 countries)
+  Calc -> CompositeCalculator: getCSIAtDate(country, now)
+  activate CompositeCalculator
+  CompositeCalculator --> Calc: csi_value
+  deactivate CompositeCalculator
+  
+  Calc -> Calc: weightedSum += csi * weight
+  Calc -> Calc: equalSum += csi
+  
+  note right
+    Example for USA:
+    csi = 35.2
+    weight = 0.1976
+    contribution = 35.2 * 0.1976 = 6.95
+  end note
+end
+
+Calc -> Calc: gdpWeighted = weightedSum
+Calc -> Calc: equalWeighted = equalSum / count
+Calc -> Calc: delta = gdpWeighted - equalWeighted
+
+note right
+  Final calculation:
+  GDP-weighted: 42.8
+  Equal-weighted: 44.2
+  Delta: -1.4
+  
+  Interpretation:
+  "Large economies have
+  lower risk than average"
+end note
+
+Calc -> Calc: getTopContributors(5)
+note right
+  Sort by weighted_contribution
+  Return top 5 countries:
+  1. China: 11.5 (26.9%)
+  2. USA: 7.0 (16.3%)
+  3. India: 4.9 (11.4%)
+  4. Japan: 1.4 (3.3%)
+  5. Germany: 1.3 (3.0%)
+end note
+
+Calc --> Store: GlobalCSIResult
+deactivate Calc
+note right
+  Complete result:
+  {
+    gdp_weighted_csi: 42.8,
+    equal_weighted_csi: 44.2,
+    metric_delta: -1.4,
+    delta_interpretation: "...",
+    top_contributors: [...],
+    data_quality: {...}
+  }
+end note
+
+Store -> Store: updateState(result)
+Store --> UI: State updated
+deactivate Store
+
+UI -> UI: Re-render with new data
+UI --> User: Display GDP-weighted CSI
+deactivate UI
+
+note over User
+  User sees:
+  - Large "42.8" CSI value
+  - "High Risk" badge
+  - Comparison bars
+  - Top 5 contributors
+end note
+
+@enduml
