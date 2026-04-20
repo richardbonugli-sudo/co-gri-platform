@@ -369,3 +369,4 @@ jobs:
           git diff --staged --quiet \
             && echo "No new results to commit" \
             || (git commit -m "chore: SEC baseline run [skip ci]" && git push)
+   
