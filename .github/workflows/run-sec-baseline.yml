@@ -55,29 +55,59 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: shadcn-ui/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
-        run: npm ci
-        working-directory: shadcn-ui
+      - name: Install dependencies (including devDependencies)
+        run: npm ci --include=dev
+        env:
+          NODE_ENV: development
 
       - name: Validate baseline script
-        working-directory: shadcn-ui
         run: test -f src/scripts/runSECBaseline.ts && echo "OK" || exit 1
 
+      - name: Verify tsx is available
+        run: ./node_modules/.bin/tsx --version
+
       - name: TypeScript check
-        working-directory: shadcn-ui
         continue-on-error: true
-        run: npx tsc --noEmit --skipLibCheck src/scripts/runSECBaseline.ts 2>&1 || true
+        run: ./node_modules/.bin/tsc --noEmit --skipLibCheck src/scripts/runSECBaseline.ts 2>&1 || true
+
+      - name: Build CLI flags
+        id: flags
+        run: |
+          FLAGS="--phase=${{ github.event.inputs.phase }}"
+
+          if [ -n "${{ github.event.inputs.ticker }}" ]; then
+            FLAGS="$FLAGS --ticker=${{ github.event.inputs.ticker }}"
+          fi
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+          fi
+
+          if [ -n "${{ github.event.inputs.concurrency }}" ] && [ "${{ github.event.inputs.concurrency }}" != "3" ]; then
+            FLAGS="$FLAGS --concurrency=${{ github.event.inputs.concurrency }}"
+          fi
+
+          if [ "${{ github.event.inputs.resume }}" = "true" ]; then
+            FLAGS="$FLAGS --resume"
+          fi
+
+          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+            FLAGS="$FLAGS --verbose"
+          fi
+
+          echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
+          echo "Resolved flags: $FLAGS"
 
       - name: Run SEC baseline
-        working-directory: shadcn-ui
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-        run: npx tsx src/scripts/runSECBaseline.ts --phase=${{ github.event.inputs.phase }}
+          NODE_ENV: development
+        run: ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts ${{ steps.flags.outputs.flags }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -85,15 +115,14 @@ jobs:
         with:
           name: sec-baseline-${{ github.run_id }}
           path: |
-            shadcn-ui/docs/sec_baseline_results.json
-            shadcn-ui/docs/sec_baseline_summary.md
-            shadcn-ui/docs/sec_baseline_checkpoint.jsonl
+            docs/sec_baseline_results.json
+            docs/sec_baseline_summary.md
+            docs/sec_baseline_checkpoint.jsonl
           retention-days: 90
           if-no-files-found: warn
 
       - name: Commit results
         if: success()
-        working-directory: shadcn-ui
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
