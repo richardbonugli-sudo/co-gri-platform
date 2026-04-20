@@ -19,138 +19,273 @@ on:
         default: ''
         type: string
       dry_run:
-        description: 'Dry run - list tickers only, no API calls (no Supabase secrets needed)'
+        description: 'Dry run — list tickers only, no API calls (no Supabase secrets needed)'
         required: false
-        default: false
-        type: boolean
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      deploy_functions:
+        description: 'Deploy edge functions before running (needs SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_ID)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
       concurrency:
-        description: 'Concurrent workers 1-10, default 3'
+        description: 'Concurrent workers 1-10 (default 3)'
         required: false
         default: '3'
         type: string
       resume:
         description: 'Resume from checkpoint'
         required: false
-        default: false
-        type: boolean
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
       verbose:
         description: 'Enable verbose logging'
         required: false
-        default: false
-        type: boolean
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   run-baseline:
     name: SEC Baseline
     runs-on: ubuntu-latest
     timeout-minutes: 90
+
     steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Set up Node.js 20
+      # ── 2. Node.js ───────────────────────────────────────────────────────────
+      - name: Set up Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: package-lock.json
 
-      - name: Install dependencies (including devDependencies)
-        run: npm ci --include=dev
-        env:
-          NODE_ENV: development
-
-      - name: Validate baseline script exists
-        run: test -f src/scripts/runSECBaseline.ts && echo "✅ Script found" || (echo "❌ Script not found at src/scripts/runSECBaseline.ts" && exit 1)
-
-      - name: Verify tsx is available
-        run: ./node_modules/.bin/tsx --version && echo "✅ tsx is available"
-
-      - name: Validate Supabase secrets (live run only)
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+      # ── 3. Install dependencies ──────────────────────────────────────────────
+      - name: Install dependencies
         run: |
-          if [ -z "$VITE_SUPABASE_URL" ] || [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
-            echo ""
-            echo "❌ MISSING REQUIRED SECRETS"
-            echo "══════════════════════════════════════════════════════════════"
-            echo "  VITE_SUPABASE_URL      = ${VITE_SUPABASE_URL:-(not set)}"
-            echo "  VITE_SUPABASE_ANON_KEY = ${VITE_SUPABASE_ANON_KEY:-(not set)}"
-            echo ""
-            echo "  To fix: Go to your GitHub repo ->"
-            echo "    Settings -> Secrets and variables -> Actions -> New repository secret"
-            echo ""
-            echo "  Add these two secrets:"
-            echo "    VITE_SUPABASE_URL      -> your Supabase project URL"
-            echo "                             (e.g. https://xxxx.supabase.co)"
-            echo "    VITE_SUPABASE_ANON_KEY -> your Supabase anon/public key"
-            echo ""
-            echo "  Both values are in: Supabase Dashboard -> Project Settings -> API"
-            echo ""
-            echo "  Alternatively, enable 'Dry run' to test without Supabase credentials."
-            echo "══════════════════════════════════════════════════════════════"
+          npm ci --include=dev
+          echo "✅ Dependencies installed"
+          echo "tsx version: $(./node_modules/.bin/tsx --version)"
+
+      # ── 4. Pre-flight checks ─────────────────────────────────────────────────
+      - name: Pre-flight checks
+        run: |
+          echo "════════════════════════════════════════════════"
+          echo "  PRE-FLIGHT ENVIRONMENT CHECK"
+          echo "════════════════════════════════════════════════"
+          echo ""
+
+          # Script existence
+          if [ -f "src/scripts/runSECBaseline.ts" ]; then
+            echo "✅ Script:              src/scripts/runSECBaseline.ts"
+          else
+            echo "❌ Script NOT FOUND:   src/scripts/runSECBaseline.ts"
             exit 1
           fi
-          echo "✅ Supabase secrets are set: ${VITE_SUPABASE_URL:0:30}..."
+
+          # tsx
+          if [ -f "./node_modules/.bin/tsx" ]; then
+            echo "✅ tsx:                 $(./node_modules/.bin/tsx --version)"
+          else
+            echo "❌ tsx not found in node_modules/.bin/"
+            exit 1
+          fi
+
+          # Supabase URL
+          if [ -n "$VITE_SUPABASE_URL" ]; then
+            echo "✅ VITE_SUPABASE_URL:   ${VITE_SUPABASE_URL:0:35}..."
+          else
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "⚠️  VITE_SUPABASE_URL:  (not set — OK for dry run)"
+            else
+              echo "❌ VITE_SUPABASE_URL:  NOT SET"
+              echo ""
+              echo "  ┌─────────────────────────────────────────────────────────┐"
+              echo "  │  HOW TO FIX                                             │"
+              echo "  │                                                         │"
+              echo "  │  GitHub repo → Settings → Secrets and variables        │"
+              echo "  │  → Actions → New repository secret                     │"
+              echo "  │                                                         │"
+              echo "  │  VITE_SUPABASE_URL      = https://xxxx.supabase.co     │"
+              echo "  │  VITE_SUPABASE_ANON_KEY = your Supabase anon key       │"
+              echo "  │                                                         │"
+              echo "  │  Find both at: Supabase Dashboard                      │"
+              echo "  │  → Project Settings → API                              │"
+              echo "  │                                                         │"
+              echo "  │  Or set dry_run=true to test without Supabase.         │"
+              echo "  └─────────────────────────────────────────────────────────┘"
+              exit 1
+            fi
+          fi
+
+          # Supabase anon key
+          if [ -n "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "✅ VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:0:20}..."
+          else
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "⚠️  VITE_SUPABASE_ANON_KEY: (not set — OK for dry run)"
+            else
+              echo "❌ VITE_SUPABASE_ANON_KEY: NOT SET"
+              exit 1
+            fi
+          fi
+
+          echo ""
+          echo "  Phase:        ${{ github.event.inputs.phase }}"
+          echo "  Dry run:      $DRY_RUN"
+          echo "  Concurrency:  ${{ github.event.inputs.concurrency }}"
+          echo "  Ticker:       ${{ github.event.inputs.ticker || '(all)' }}"
+          echo "  Deploy fns:   ${{ github.event.inputs.deploy_functions }}"
+          echo ""
+          echo "✅ Pre-flight passed"
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
 
-      - name: Install Supabase CLI (live run only)
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+      # ── 5. Install Supabase CLI (deploy only) ────────────────────────────────
+      - name: Install Supabase CLI
+        if: ${{ github.event.inputs.deploy_functions == 'true' }}
         run: |
-          curl -fsSL https://github.com/supabase/cli/releases/download/v1.200.3/supabase_linux_amd64.tar.gz | tar -xz
+          curl -fsSL \
+            https://github.com/supabase/cli/releases/download/v1.200.3/supabase_linux_amd64.tar.gz \
+            | tar -xz
           sudo mv supabase /usr/local/bin/supabase
           supabase --version
           echo "✅ Supabase CLI installed"
 
-      - name: Deploy Edge Functions (live run only)
-        if: ${{ github.event.inputs.dry_run != 'true' }}
+      # ── 6. Validate deploy secrets ───────────────────────────────────────────
+      - name: Validate deploy secrets
+        if: ${{ github.event.inputs.deploy_functions == 'true' }}
         run: |
-          echo "Deploying edge functions to Supabase..."
-
-          # Extract project ref from URL (https://PROJECTREF.supabase.co)
-          PROJECT_REF=$(echo "$VITE_SUPABASE_URL" | sed 's|https://||' | sed 's|\.supabase\.co.*||')
-          echo "Project ref: $PROJECT_REF"
-
-          if [ -z "$PROJECT_REF" ] || [ "$PROJECT_REF" = "$VITE_SUPABASE_URL" ]; then
-            echo "❌ Could not extract project ref from VITE_SUPABASE_URL: $VITE_SUPABASE_URL"
-            echo "   Expected format: https://PROJECTREF.supabase.co"
+          MISSING=0
+          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "❌ SUPABASE_ACCESS_TOKEN is not set"
+            MISSING=1
+          else
+            echo "✅ SUPABASE_ACCESS_TOKEN is set"
+          fi
+          if [ -z "$SUPABASE_PROJECT_ID" ]; then
+            echo "❌ SUPABASE_PROJECT_ID is not set"
+            MISSING=1
+          else
+            echo "✅ SUPABASE_PROJECT_ID = $SUPABASE_PROJECT_ID"
+          fi
+          if [ "$MISSING" = "1" ]; then
+            echo ""
+            echo "  ┌─────────────────────────────────────────────────────────┐"
+            echo "  │  To deploy edge functions, add these GitHub secrets:    │"
+            echo "  │                                                         │"
+            echo "  │  SUPABASE_ACCESS_TOKEN                                  │"
+            echo "  │    supabase.com/dashboard/account/tokens                │"
+            echo "  │    → Generate new token                                 │"
+            echo "  │                                                         │"
+            echo "  │  SUPABASE_PROJECT_ID                                    │"
+            echo "  │    Supabase Dashboard → Project Settings → General      │"
+            echo "  │    → Reference ID  (e.g. abcdefghijklmnop)             │"
+            echo "  │                                                         │"
+            echo "  │  OPENAI_API_KEY  (used by extract_geographic_narrative) │"
+            echo "  │    platform.openai.com/api-keys                         │"
+            echo "  └─────────────────────────────────────────────────────────┘"
             exit 1
           fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
 
-          # Deploy each required edge function
-          for fn in fetch_sec_cik fetch_sec_filing extract_geographic_narrative; do
+      # ── 7. Set OpenAI secret on Supabase project ─────────────────────────────
+      - name: Set OpenAI secret on Supabase project
+        if: ${{ github.event.inputs.deploy_functions == 'true' }}
+        run: |
+          if [ -n "$OPENAI_API_KEY" ]; then
+            echo "OPENAI_API_KEY=$OPENAI_API_KEY" | \
+              supabase secrets set \
+                --project-ref "$SUPABASE_PROJECT_ID" \
+                --env-file /dev/stdin
+            echo "✅ OPENAI_API_KEY set on Supabase project"
+          else
+            echo "⚠️  OPENAI_API_KEY not provided — extract_geographic_narrative may fail"
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      # ── 8. Deploy edge functions ─────────────────────────────────────────────
+      - name: Deploy edge functions
+        if: ${{ github.event.inputs.deploy_functions == 'true' }}
+        run: |
+          FUNCTIONS=(
+            fetch_sec_cik
+            fetch_sec_filing
+            extract_geographic_narrative
+            download_pdf_report
+            fetch_sustainability_report
+          )
+          DEPLOYED=0
+          FAILED=0
+          for fn in "${FUNCTIONS[@]}"; do
             if [ -d "supabase/functions/$fn" ]; then
-              echo "Deploying $fn..."
-              supabase functions deploy $fn \
-                --project-ref "$PROJECT_REF" \
-                --no-verify-jwt 2>&1
-              echo "✅ $fn deployed"
+              echo "🚀 Deploying $fn ..."
+              if supabase functions deploy "$fn" \
+                  --project-ref "$SUPABASE_PROJECT_ID" \
+                  --no-verify-jwt 2>&1; then
+                echo "  ✅ $fn deployed"
+                DEPLOYED=$((DEPLOYED + 1))
+              else
+                echo "  ❌ $fn deploy FAILED"
+                FAILED=$((FAILED + 1))
+              fi
             else
-              echo "⚠️  Function directory supabase/functions/$fn not found, skipping"
+              echo "  ⚠️  supabase/functions/$fn not found — skipping"
             fi
           done
+          echo ""
+          echo "Deployed: $DEPLOYED  Failed: $FAILED"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "⚠️  Some functions failed to deploy — baseline may produce partial results"
+          else
+            echo "✅ All edge functions deployed successfully"
+          fi
         env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
 
+      # ── 9. Build CLI flags ────────────────────────────────────────────────────
       - name: Build CLI flags
         id: flags
         run: |
           FLAGS="--phase=${{ github.event.inputs.phase }}"
 
-          if [ -n "${{ github.event.inputs.ticker }}" ]; then
-            FLAGS="$FLAGS --ticker=${{ github.event.inputs.ticker }}"
+          TICKER="${{ github.event.inputs.ticker }}"
+          if [ -n "$TICKER" ]; then
+            FLAGS="$FLAGS --ticker=$TICKER"
           fi
 
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             FLAGS="$FLAGS --dry-run"
           fi
 
-          if [ -n "${{ github.event.inputs.concurrency }}" ] && [ "${{ github.event.inputs.concurrency }}" != "3" ]; then
-            FLAGS="$FLAGS --concurrency=${{ github.event.inputs.concurrency }}"
+          CONC="${{ github.event.inputs.concurrency }}"
+          if [ -n "$CONC" ] && [ "$CONC" != "3" ]; then
+            FLAGS="$FLAGS --concurrency=$CONC"
           fi
 
           if [ "${{ github.event.inputs.resume }}" = "true" ]; then
@@ -162,17 +297,60 @@ jobs:
           fi
 
           echo "flags=$FLAGS" >> "$GITHUB_OUTPUT"
-          echo "Resolved flags: $FLAGS"
+          echo "✅ Resolved flags: $FLAGS"
 
+      # ── 10. Run the baseline script ───────────────────────────────────────────
       - name: Run SEC baseline
+        run: |
+          set -o pipefail
+          echo "▶ Command: ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts ${{ steps.flags.outputs.flags }}"
+          echo ""
+
+          ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts \
+            ${{ steps.flags.outputs.flags }} \
+            2>&1 | tee /tmp/baseline_output.txt
+
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo ""
+            echo "════════════════════════════════════════════════════════════"
+            echo "  ❌ Script exited with code $EXIT_CODE"
+            echo ""
+            echo "  Last 30 lines of output:"
+            echo "  ─────────────────────────"
+            tail -30 /tmp/baseline_output.txt
+            echo ""
+            echo "  COMMON CAUSES & FIXES:"
+            echo ""
+            echo "  1. Edge functions not deployed"
+            echo "     → Re-run with deploy_functions=true"
+            echo "     → Add: SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_ID secrets"
+            echo ""
+            echo "  2. extract_geographic_narrative needs OPENAI_API_KEY"
+            echo "     → Add OPENAI_API_KEY as a GitHub secret"
+            echo "     → Re-run with deploy_functions=true to push it to Supabase"
+            echo ""
+            echo "  3. EDGAR rate-limit (HTTP 429)"
+            echo "     → Re-run with concurrency=1 or concurrency=2"
+            echo ""
+            echo "  4. Supabase secrets missing or wrong"
+            echo "     → Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY"
+            echo "     → Both are in: Supabase Dashboard → Project Settings → API"
+            echo "════════════════════════════════════════════════════════════"
+            exit $EXIT_CODE
+          fi
+
+          echo ""
+          echo "✅ Baseline script completed successfully"
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           NODE_ENV: development
-        run: ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts ${{ steps.flags.outputs.flags }}
 
+      # ── 11. Upload artifacts ──────────────────────────────────────────────────
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         if: always()
@@ -182,13 +360,20 @@ jobs:
             docs/sec_baseline_results.json
             docs/sec_baseline_summary.md
             docs/sec_baseline_checkpoint.jsonl
+            /tmp/baseline_output.txt
           retention-days: 90
           if-no-files-found: warn
 
+      # ── 12. Commit results ────────────────────────────────────────────────────
       - name: Commit results
         if: success()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/sec_baseline_results.json docs/sec_baseline_summary.md docs/sec_baseline_checkpoint.jsonl 2>/dev/null || true
-          git diff --staged --quiet && echo "No changes to commit" || (git commit -m "chore: SEC baseline run [skip ci]" && git push)
+          git add \
+            docs/sec_baseline_results.json \
+            docs/sec_baseline_summary.md \
+            docs/sec_baseline_checkpoint.jsonl 2>/dev/null || true
+          git diff --staged --quiet \
+            && echo "No new results to commit" \
+            || (git commit -m "chore: SEC baseline run [skip ci]" && git push)
