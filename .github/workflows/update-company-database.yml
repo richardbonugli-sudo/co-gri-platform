@@ -1,0 +1,206 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# CO-GRI Platform — Daily Company Database Update
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Runs daily at 02:00 UTC to refresh companyDatabase.ts with the latest
+# company data from Financial Modeling Prep (FMP) API.
+#
+# What it does:
+#   1. Fetches FMP /stock/list (1 bulk API call, ~70,000 companies)
+#   2. Filters to the 256 companies in companyDatabase.ts
+#   3. Updates: name, exchange, country, sector, isADR
+#   4. PRESERVES: aliases (manually curated, not available from any API)
+#   5. Only commits if data actually changed (avoids empty commits)
+#
+# Required GitHub Secret:
+#   FMP_API_KEY — your Financial Modeling Prep API key
+#   (Settings → Secrets and variables → Actions → New repository secret)
+#
+# Manual trigger:
+#   GitHub UI → Actions → "Daily Company Database Update" → Run workflow
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Daily Company Database Update
+
+on:
+  # Run daily at 02:00 UTC (off-peak hours, before US market open)
+  schedule:
+    - cron: '0 2 * * *'
+
+  # Allow manual trigger from GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no file changes, just report what would change)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      verbose:
+        description: 'Enable verbose logging'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  update-company-database:
+    name: Update Company Database
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: write  # Required to commit and push changes
+
+    steps:
+      # ── Step 1: Checkout repository ────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Use a token with write permissions for the commit step
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      # ── Step 2: Setup Node.js ───────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # ── Step 3: Install dependencies ───────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci --prefer-offline
+        env:
+          NODE_ENV: development
+
+      # ── Step 4: Validate FMP API key is available ──────────────────────────
+      - name: Validate FMP API key
+        run: |
+          if [ -z "${{ secrets.FMP_API_KEY }}" ]; then
+            echo "❌ ERROR: FMP_API_KEY secret is not set."
+            echo "Go to: Settings → Secrets and variables → Actions → New repository secret"
+            echo "Name: FMP_API_KEY"
+            echo "Value: Your FMP API key from https://financialmodelingprep.com/"
+            exit 1
+          fi
+          echo "✅ FMP_API_KEY secret is available"
+
+      # ── Step 5: Run the update script ──────────────────────────────────────
+      - name: Run company database update
+        id: update
+        run: |
+          # Build flags based on workflow_dispatch inputs
+          FLAGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+            echo "🔍 Running in DRY RUN mode — no file changes will be made"
+          fi
+          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
+            FLAGS="$FLAGS --verbose"
+          fi
+
+          # Run the update script
+          npx tsx src/scripts/updateCompanyDatabase.ts $FLAGS
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          NODE_ENV: production
+
+      # ── Step 6: Check if database was modified ─────────────────────────────
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet src/utils/companyDatabase.ts; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "✅ No changes detected — database is already up to date"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "📝 Changes detected in companyDatabase.ts"
+            git diff --stat src/utils/companyDatabase.ts
+          fi
+
+      # ── Step 7: Validate TypeScript (only if changes exist) ────────────────
+      - name: Validate TypeScript output
+        if: steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          echo "Running TypeScript validation on updated companyDatabase.ts..."
+          npx tsc --noEmit --skipLibCheck
+          echo "✅ TypeScript validation passed"
+
+      # ── Step 8: Commit and push changes ────────────────────────────────────
+      - name: Commit and push changes
+        if: steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Stage only the company database file (and its backup if present)
+          git add src/utils/companyDatabase.ts
+
+          # Remove backup file if it was created (don't commit it)
+          if [ -f "src/utils/companyDatabase.ts.backup" ]; then
+            rm src/utils/companyDatabase.ts.backup
+          fi
+
+          # Get change summary for commit message
+          CHANGED_LINES=$(git diff --cached --stat src/utils/companyDatabase.ts | tail -1)
+
+          # Commit with [skip ci] to prevent triggering other workflows
+          git commit -m "chore(data): auto-update companyDatabase.ts [skip ci]
+
+          Daily automated update via FMP API
+          Date: $(date -u '+%Y-%m-%d %H:%M UTC')
+          ${CHANGED_LINES}
+
+          - Updated: company names, exchanges, sectors, isADR flags
+          - Preserved: all aliases (manually curated, not from API)
+          - Source: Financial Modeling Prep (FMP) /stock/list bulk endpoint"
+
+          git push origin HEAD
+          echo "✅ Changes committed and pushed successfully"
+
+      # ── Step 9: Summary ────────────────────────────────────────────────────
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Company Database Update Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Run date | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Changes detected | ${{ steps.check_changes.outputs.changed || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Data source | FMP /stock/list (bulk) + /profile (individual fallback) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Notes" >> $GITHUB_STEP_SUMMARY
+          echo "- \`aliases\` field is always preserved (manually curated)" >> $GITHUB_STEP_SUMMARY
+          echo "- Commits use \`[skip ci]\` to prevent workflow loops" >> $GITHUB_STEP_SUMMARY
+          echo "- FMP free tier: 250 req/day (this run uses ~106 max)" >> $GITHUB_STEP_SUMMARY
+
+  # ── Failure notification job ──────────────────────────────────────────────
+  notify-on-failure:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: update-company-database
+    if: failure()
+
+    steps:
+      - name: Create failure issue annotation
+        run: |
+          echo "::error title=Company Database Update Failed::The daily company database update failed. Check the workflow logs for details."
+          echo "## ❌ Company Database Update Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The daily automated update of \`companyDatabase.ts\` failed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Possible causes:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`FMP_API_KEY\` secret is missing or expired" >> $GITHUB_STEP_SUMMARY
+          echo "- FMP API rate limit exceeded (250 req/day on free tier)" >> $GITHUB_STEP_SUMMARY
+          echo "- FMP API is temporarily unavailable" >> $GITHUB_STEP_SUMMARY
+          echo "- TypeScript validation failed on generated output" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action required:** Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details." >> $GITHUB_STEP_SUMMARY

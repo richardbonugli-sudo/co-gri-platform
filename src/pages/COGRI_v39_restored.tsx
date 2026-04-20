@@ -1,0 +1,15 @@
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, Search, AlertCircle, ChevronDown, ChevronUp, Download, FileText } from 'lucide-react';
+import { getCompanyGeographicExposure } from '@/services/v34ComprehensiveIntegration';
+import { getCountryShockIndex } from '@/data/globalCountries';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { searchCompanies } from '@/utils/companyDatabase';
+import { generateFallbackSummary } from '@/utils/fallbackSummaryGenerator';
+import { getCountryInsights } from '@/utils/geopoliticalInsights';
+import { calculatePoliticalAlignment } from '@/services/politicalAlignmentService';

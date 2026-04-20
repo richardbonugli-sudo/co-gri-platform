@@ -1,0 +1,70 @@
+            {/* Task 3: Cross-Mode Navigation Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Cross-Mode Analysis</CardTitle>
+                <CardDescription>
+                  Explore this company in different analytical modes
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {/* Stress Test This Company - Navigate to Scenario Mode */}
+                <Button 
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      company: ticker,
+                      sector: geoData.sector,
+                      mode: 'scenario'
+                    });
+                    setLocation(`/predictive-analytics?${params.toString()}`);
+                  }}
+                  variant="default"
+                  className="w-full justify-start bg-orange-600 hover:bg-orange-700"
+                >
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Stress Test This Company in Scenario Mode
+                </Button>
+                
+                {/* View Forecast - Navigate to Strategic Forecast */}
+                <Button 
+                  onClick={() => {
+                    const params = new URLSearchParams({
+                      company: ticker,
+                      sector: geoData.sector
+                    });
+                    setLocation(`/predictive-analytics?${params.toString()}&mode=forecast`);
+                  }}
+                  variant="outline"
+                  className="w-full justify-start"
+                >
+                  <TrendingUp className="mr-2 h-4 w-4" />
+                  View Forecast Analysis for {ticker}
+                </Button>
+                
+                {/* View Country Risk - Navigate to Country Mode */}
+                <Button 
+                  onClick={() => {
+                    // Get top 3 countries by exposure
+                    const topCountries = calculationResult.countryExposures
+                      .slice(0, 3)
+                      .map(ce => ce.country)
+                      .join(',');
+                    setLocation(`/?countries=${encodeURIComponent(topCountries)}`);
+                  }}
+                  variant="outline"
+                  className="w-full justify-start"
+                >
+                  <AlertTriangle className="mr-2 h-4 w-4" />
+                  Analyze Top Exposure Countries
+                </Button>
+                
+                {/* View Calculation Verification */}
+                <Button 
+                  onClick={() => setVerificationDrawerOpen(true)}
+                  variant="outline"
+                  className="w-full justify-start"
+                >
+                  <Info className="mr-2 h-4 w-4" />
+                  View Calculation Audit Trail
+                </Button>
+              </CardContent>
+            </Card>

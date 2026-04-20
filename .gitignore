@@ -1,0 +1,86 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Database files
+*.db
+*.sqlite
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test outputs
+playwright-report/
+test-results/
+coverage/
+
+# Backup files
+*.backup
+
+# Large data/output files
+outputs/
+aggregate_metrics.csv
+baseline_matrix_full.csv
+completeness_summary.csv
+expectation_weighting_verification.csv
+fallback_analysis.csv
+flagged_events.csv
+incomplete_coverage.csv
+
+# Temporary/debug files
+check_console.html
+check_console.js
+debug_tsla_integration.js
+test_aapl.html
+test_aapl_browser.html
+test_aapl_debug.js
+test_aapl_india_fix.html
+test_micro_exposure.html
+
+# Lock files (keep package-lock.json, ignore pnpm)
+pnpm-lock.yaml
+
+# shadcn-ui subfolder (nested duplicate)
+shadcn-ui/
+*.tar.gz
+node_modules/
+.env

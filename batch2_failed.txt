@@ -1,0 +1,7 @@
+NFLX: No revenue segments found
+INTC: No revenue segments found
+MRK: No revenue segments found
+ORCL: No revenue segments found
+QCOM: No revenue segments found
+IBM: No revenue segments found
+CAT: No revenue segments found

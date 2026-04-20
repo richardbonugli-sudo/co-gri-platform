@@ -1,0 +1,21 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Install dependencies
+COPY package*.json ./
+RUN npm install --production
+
+# Copy source code
+COPY src/types/csi-enhancement ./src/types/csi-enhancement
+COPY src/services/csi-enhancement ./src/services/csi-enhancement
+COPY database/migrations/csi-enhancement ./database/migrations/csi-enhancement
+
+# Create logs directory
+RUN mkdir -p /app/logs
+
+# Set environment
+ENV NODE_ENV=production
+
+# Run scheduler
+CMD ["node", "src/services/csi-enhancement/scheduler.ts"]
