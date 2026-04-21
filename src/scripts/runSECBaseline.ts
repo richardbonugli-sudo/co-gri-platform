@@ -1154,12 +1154,73 @@ async function main(): Promise<void> {
   log('═══════════════════════════════════════════════════════════════');
 
   // Validate environment (skip for dry-run)
+   // ── Validate environment (skip for dry-run) ───────────────────────────────
+  // Instead of calling process.exit(1), write a minimal error-state results
+  // file so the workflow continues, commits it, and the dashboard can display
+  // a clear "missing secrets" message instead of a blank .gitkeep placeholder.
   if (!IS_DRY_RUN && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
-    log('❌ ERROR: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set');
-    log('   Set them as environment variables or in .env file');
-    log('   For dry-run testing, use: --dry-run');
-    process.exit(1);
+    log('⚠️  WARNING: Supabase credentials are not set.');
+    log('   Required environment variables (either form is accepted):');
+    log('     SUPABASE_URL  or  VITE_SUPABASE_URL');
+    log('     SUPABASE_ANON_KEY  or  VITE_SUPABASE_ANON_KEY');
+    log('');
+    log('   In GitHub Actions: add them as repository secrets:');
+    log('   → Settings → Secrets and variables → Actions → New repository secret');
+    log('');
+    log('   Writing an error-state results file so the dashboard shows this message.');
+
+    const nowIso = new Date().toISOString();
+    const errorMsg =
+      'Missing required secrets: SUPABASE_URL and/or SUPABASE_ANON_KEY. ' +
+      'Please add these as GitHub repository secrets under ' +
+      'Settings → Secrets and variables → Actions.';
+
+    const errorSummary: RunSummary = {
+      runId,
+      phase: SINGLE_TICKER ? 'single' : PHASE,
+      startTime,
+      endTime: nowIso,
+      durationMs: 0,
+      totalCompanies: 0,
+      completedCompanies: 0,
+      failedCompanies: 0,
+      skippedCompanies: 0,
+      results: [],
+      error: errorMsg,
+      _degradedMode: true,
+      _degradedReason: errorMsg,
+    };
+
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    fs.writeFileSync(LATEST_FILE, JSON.stringify(errorSummary, null, 2), 'utf-8');
+    log(`✅ Error-state latest.json written to: ${LATEST_FILE}`);
+
+    const errorSummaryMd = [
+      '# SEC Baseline Run — Error State',
+      '',
+      `**Run ID:** ${runId}`,
+      `**Timestamp:** ${nowIso}`,
+      '',
+      '## ❌ Missing GitHub Secrets',
+      '',
+      errorMsg,
+      '',
+      '## How to Fix',
+      '',
+      '1. Go to your GitHub repository',
+      '2. Click **Settings** → **Secrets and variables** → **Actions**',
+      '3. Click **New repository secret** and add:',
+      '   - `SUPABASE_URL` — your Supabase project URL',
+      '   - `SUPABASE_ANON_KEY` — your Supabase anon/public key',
+      '4. Re-run the **SEC Runtime Baseline** workflow',
+    ].join('\n');
+    fs.writeFileSync(SUMMARY_FILE, errorSummaryMd, 'utf-8');
+    log(`✅ Error-state summary written to: ${SUMMARY_FILE}`);
+    log('');
+    log('   Exiting with code 0 so the workflow commits these files to the repo.');
+    return;
   }
+
 
   if (!IS_DRY_RUN) {
     log(`✅ Supabase URL: ${SUPABASE_URL.slice(0, 30)}...`);
@@ -1299,3 +1360,4 @@ main().catch(err => {
   console.error(`[FATAL] ${String(err)}`);
   process.exit(1);
 });
+fix: write error-state results file when secrets missing (exit 0)
