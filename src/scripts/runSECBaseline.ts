@@ -39,9 +39,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const DOCS_DIR = path.join(PROJECT_ROOT, 'docs');
-const CHECKPOINT_FILE = '/tmp/sec_baseline_checkpoint.jsonl';
-const RESULTS_FILE = path.join(DOCS_DIR, 'sec_baseline_results.json');
-const SUMMARY_FILE = path.join(DOCS_DIR, 'sec_baseline_summary.md');
+const OUTPUT_DIR = path.join(DOCS_DIR, 'baseline-results');
+const CHECKPOINT_FILE = path.join(OUTPUT_DIR, 'checkpoint.json');
+const LATEST_FILE = path.join(OUTPUT_DIR, 'latest.json');
+const SUMMARY_FILE = path.join(OUTPUT_DIR, 'latest-summary.md');
+
 
 // ─── CLI Flags ────────────────────────────────────────────────────────────────
 
@@ -411,9 +413,14 @@ async function callEdgeFunction<T>(
   functionName: string,
   body: Record<string, unknown>
 ): Promise<T> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-    throw new Error('VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set');
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error(
+      'Supabase credentials are not set. ' +
+      'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub repository secrets under ' +
+      'Settings → Secrets and variables → Actions.'
+    );
   }
+
 
   const url = `${SUPABASE_URL}/functions/v1/${functionName}`;
   const payload = JSON.stringify(body);
