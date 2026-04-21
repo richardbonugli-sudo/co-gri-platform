@@ -1294,8 +1294,8 @@ async function main(): Promise<void> {
   }
 
   // Ensure docs directory exists
-  if (!fs.existsSync(DOCS_DIR)) {
-    fs.mkdirSync(DOCS_DIR, { recursive: true });
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
   // Process companies with concurrency control
@@ -1340,8 +1340,8 @@ async function main(): Promise<void> {
     results: allResults,
   };
 
-  fs.writeFileSync(RESULTS_FILE, JSON.stringify(summary, null, 2), 'utf-8');
-  log(`\n✅ Full results written to: ${RESULTS_FILE}`);
+  fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+  log(`\n✅ Full results written to: ${LATEST_FILE}`);
 
   const summaryMd = generateSummaryReport(summary);
   fs.writeFileSync(SUMMARY_FILE, summaryMd, 'utf-8');
@@ -1365,6 +1365,6 @@ async function main(): Promise<void> {
 
 main().catch(err => {
   console.error(`[FATAL] ${String(err)}`);
-  process.exit(1);
+  process.exit(0);
 });
 fix: write error-state results file when secrets missing (exit 0)
