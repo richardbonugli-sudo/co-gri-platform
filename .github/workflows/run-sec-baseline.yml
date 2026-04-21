@@ -70,6 +70,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90   # Full A+B+C run can take ~60 min at concurrency=3
 
+    # Opt into Node.js 24 for all actions in this job to avoid the Node.js 20
+    # deprecation warning. Node.js 24 becomes the default on June 2nd, 2026 and
+    # Node.js 20 is removed entirely on September 16th, 2026.
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -81,6 +84,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4.2.2
         with:
+          # Use a token with write permissions for the commit step
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
@@ -88,12 +92,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4.4.0
         with:
-          node-version: '22'
+          node-version: '24'   # ✅ FIX: was '22' — must match FORCE_JAVASCRIPT_ACTIONS_TO_NODE24
           cache: 'npm'
 
       # ── Step 3: Install dependencies ───────────────────────────────────────
       - name: Install dependencies
-        run: npm ci --prefer-offline
+        # NODE_ENV must NOT be 'production' here — devDependencies (tsx, typescript,
+        # vitest, etc.) are required at runtime in this workflow. npm ci with
+        # NODE_ENV=production skips devDependencies entirely, causing tsx to be
+        # missing when Step 5 runs the baseline script.
+        # ✅ FIX: removed --prefer-offline (fresh runners have no local cache;
+        #         --prefer-offline caused silent install failures on first run)
+        run: npm ci
         env:
           NODE_ENV: development
 
@@ -120,6 +130,8 @@ jobs:
             echo "⚠️  WARNING: OPENAI_API_KEY secret is not set."
             echo "   Narrative parsing (extract_geographic_narrative) will be skipped."
             echo "   narrativeParsingSucceeded will be false for all companies."
+            echo "   To enable: Settings → Secrets and variables → Actions → New repository secret"
+            echo "   Name: OPENAI_API_KEY  Value: sk-..."
             MISSING="$MISSING OPENAI_API_KEY"
           else
             echo "✅ OPENAI_API_KEY is available"
@@ -128,15 +140,17 @@ jobs:
           if [ -n "$MISSING" ]; then
             echo ""
             echo "ℹ️  Missing secrets:$MISSING"
-            echo "   The run will continue in degraded mode."
+            echo "   The run will continue in degraded mode (no Supabase writes / no narrative parsing)."
           fi
 
       # ── Step 5: Run the SEC baseline script ────────────────────────────────
       - name: Run SEC baseline
         id: baseline
         run: |
+          # ── Build CLI flags ──────────────────────────────────────────────
           FLAGS=""
 
+          # Map category input to --phase= flag
           CATEGORY="${{ github.event.inputs.category }}"
           case "$CATEGORY" in
             "A")
@@ -157,52 +171,63 @@ jobs:
               ;;
           esac
 
+          # Single ticker override
           TICKER="${{ github.event.inputs.ticker }}"
           if [ -n "$TICKER" ]; then
             FLAGS="<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>F</mi><mi>L</mi><mi>A</mi><mi>G</mi><mi>S</mi><mo>−</mo><mo>−</mo><mi>t</mi><mi>i</mi><mi>c</mi><mi>k</mi><mi>e</mi><mi>r</mi><mo>=</mo></mrow><annotation encoding="application/x-tex">FLAGS --ticker=</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7667em;vertical-align:-0.0833em;"></span><span class="mord mathnormal" style="margin-right:0.13889em;">F</span><span class="mord mathnormal">L</span><span class="mord mathnormal">A</span><span class="mord mathnormal" style="margin-right:0.05764em;">GS</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">−</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.7778em;vertical-align:-0.0833em;"></span><span class="mord">−</span><span class="mord mathnormal">t</span><span class="mord mathnormal">i</span><span class="mord mathnormal">c</span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mord mathnormal" style="margin-right:0.02778em;">er</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span></span></span></span>TICKER"
             echo "🎯 Single ticker mode: $TICKER"
           fi
 
+          # Dry run
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             FLAGS="$FLAGS --dry-run"
             echo "🔍 Running in DRY RUN mode — no API calls, no file writes"
           fi
 
+          # Verbose logging
           if [ "${{ github.event.inputs.verbose }}" = "true" ]; then
             FLAGS="$FLAGS --verbose"
             echo "🔊 Verbose logging enabled"
           fi
 
           echo ""
-          echo "▶ npx tsx src/scripts/runSECBaseline.ts $FLAGS"
+          echo "▶ ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts $FLAGS"
           echo ""
 
-          npx tsx src/scripts/runSECBaseline.ts $FLAGS
+          # ✅ FIX: Use the locally installed tsx binary instead of npx tsx.
+          # npx tsx can attempt a live network download if not cached, which is
+          # unreliable in CI. tsx is in devDependencies and installed by Step 3.
+          ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts $FLAGS
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          NODE_ENV: production
+          # NODE_ENV is intentionally NOT set to 'production' here so that
+          # Node.js module resolution behaves consistently with the install step.
+          NODE_ENV: development
 
       # ── Step 6: Check if results were written ─────────────────────────────
       - name: Check for changes
         id: check_changes
         run: |
-          # Legacy path fallback
+          # Legacy path fallback: if script wrote to old path but not new path, copy it over
           if [ -f docs/sec_baseline_results.json ] && [ ! -f docs/baseline-results/latest.json ]; then
             mkdir -p docs/baseline-results
             cp docs/sec_baseline_results.json docs/baseline-results/latest.json
-            echo "Legacy output path detected - copied to docs/baseline-results/latest.json"
+            echo "Legacy output path detected - copied docs/sec_baseline_results.json to docs/baseline-results/latest.json"
           fi
 
           CHANGED=false
 
+          # Check for modified tracked files
           if ! git diff --quiet docs/baseline-results/ 2>/dev/null; then
             CHANGED=true
             echo "Modified tracked files detected in docs/baseline-results/"
             git diff --stat docs/baseline-results/
           fi
 
+          # Check for new untracked files (first-ever run has no tracked files yet)
+          # Use tr -d ' ' to strip whitespace before numeric comparison (portable across shells)
           UNTRACKED=$(git ls-files --others --exclude-standard docs/baseline-results/ 2>/dev/null | wc -l | tr -d ' ')
           if [ "$UNTRACKED" -gt "0" ]; then
             CHANGED=true
@@ -212,13 +237,14 @@ jobs:
           echo "changed=<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>H</mi><mi>A</mi><mi>N</mi><mi>G</mi><mi>E</mi><mi>D</mi><mi mathvariant="normal">&quot;</mi><mo>&gt;</mo><mo>&gt;</mo></mrow><annotation encoding="application/x-tex">CHANGED&quot; &gt;&gt; </annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7335em;vertical-align:-0.0391em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="mord mathnormal">A</span><span class="mord mathnormal" style="margin-right:0.05764em;">NGE</span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mord">&quot;</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">&gt;&gt;</span></span></span></span>GITHUB_OUTPUT
           echo "Final change detection result: changed=<span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>H</mi><mi>A</mi><mi>N</mi><mi>G</mi><mi>E</mi><mi>D</mi><mo stretchy="false">(</mo><mi>u</mi><mi>n</mi><mi>t</mi><mi>r</mi><mi>a</mi><mi>c</mi><mi>k</mi><mi>e</mi><mi>d</mi><mo>=</mo></mrow><annotation encoding="application/x-tex">CHANGED (untracked=</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1em;vertical-align:-0.25em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mord mathnormal" style="margin-right:0.08125em;">H</span><span class="mord mathnormal">A</span><span class="mord mathnormal" style="margin-right:0.05764em;">NGE</span><span class="mord mathnormal" style="margin-right:0.02778em;">D</span><span class="mopen">(</span><span class="mord mathnormal">u</span><span class="mord mathnormal">n</span><span class="mord mathnormal">t</span><span class="mord mathnormal" style="margin-right:0.02778em;">r</span><span class="mord mathnormal">a</span><span class="mord mathnormal">c</span><span class="mord mathnormal" style="margin-right:0.03148em;">k</span><span class="mord mathnormal">e</span><span class="mord mathnormal">d</span><span class="mspace" style="margin-right:0.2778em;"></span><span class="mrel">=</span></span></span></span>UNTRACKED)"
 
-      # ── Step 6b: Copy results to public folder ─────────────────────────────
+      # ── Step 6b: Copy results to public folder (for Vite static serving) ──
       - name: Copy results to public folder
         if: steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
         run: |
           mkdir -p public/docs/baseline-results
           mkdir -p docs/baseline-results
 
+          # Explicit error if latest.json is missing after the script run
           if [ ! -f docs/baseline-results/latest.json ]; then
             echo "::error title=Missing Output File::docs/baseline-results/latest.json was not found after the script completed."
             echo ""
@@ -228,25 +254,31 @@ jobs:
             echo "  2. The script exited early due to an error (check Step 5 logs)"
             echo "  3. The script ran in --dry-run mode (no file writes in dry-run)"
             echo "  4. A legacy output path was used (docs/sec_baseline_results.json)"
+            echo "     Step 6 should have copied it; if not, check the check_changes step logs"
             echo ""
+            echo "Dashboard will NOT be updated. Fix the script output path and re-run."
             exit 1
           fi
 
           cp docs/baseline-results/latest.json public/docs/baseline-results/latest.json
-          echo "✅ Copied latest.json to public/docs/baseline-results/"
+          echo "Copied latest.json to public/docs/baseline-results/"
 
+          # Verify the copy succeeded and is not the placeholder
           RUN_ID=$(node -e "try{const d=require('./public/docs/baseline-results/latest.json');console.log(d.runId||'unknown')}catch(e){console.log('error')}")
           echo "Run ID in public copy: $RUN_ID"
           RESULT_COUNT=$(node -e "try{const d=require('./public/docs/baseline-results/latest.json');console.log((d.results||[]).length)}catch(e){console.log(0)}")
           echo "Results count: $RESULT_COUNT companies"
 
+          # Warn if the public copy still contains the placeholder sentinel
           if [ "$RUN_ID" = "pending-first-run" ]; then
-            echo "::warning title=Placeholder Sentinel Detected::The copied latest.json still contains runId=pending-first-run."
+            echo "::warning title=Placeholder Sentinel Detected::The copied latest.json still contains runId=pending-first-run. The script may not have written real results."
+            echo "WARNING: public copy still contains placeholder sentinel (runId=pending-first-run)"
+            echo "The dashboard will show no data until a real run writes actual results."
           fi
 
           if [ -f docs/baseline-results/latest-summary.md ]; then
             cp docs/baseline-results/latest-summary.md public/docs/baseline-results/latest-summary.md
-            echo "✅ Copied latest-summary.md to public/docs/baseline-results/"
+            echo "Copied latest-summary.md to public/docs/baseline-results/"
           fi
 
       # ── Step 7: Commit and push results ────────────────────────────────────
@@ -256,10 +288,13 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
+          # Stage docs/baseline-results/ AND public/docs/baseline-results/
           git add docs/baseline-results/ public/docs/baseline-results/
 
+          # Summarise what changed
           CHANGED_STAT=$(git diff --cached --stat docs/baseline-results/ | tail -1)
 
+          # Build a descriptive commit message
           CATEGORY="${{ github.event.inputs.category }}"
           TICKER="${{ github.event.inputs.ticker }}"
           TICKER_NOTE=""
@@ -267,6 +302,7 @@ jobs:
             TICKER_NOTE=" (ticker: $TICKER)"
           fi
 
+          # Commit with [skip ci] to prevent triggering other workflows
           git commit -m "chore(data): sec-baseline results — category <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>A</mi><mi>T</mi><mi>E</mi><mi>G</mi><mi>O</mi><mi>R</mi><mi>Y</mi></mrow><annotation encoding="application/x-tex">CATEGORY</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mord mathnormal">A</span><span class="mord mathnormal" style="margin-right:0.00773em;">TEGOR</span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span></span></span></span>TICKER_NOTE [skip ci]
 
           Automated SEC runtime baseline via GitHub Actions
@@ -282,7 +318,7 @@ jobs:
           - public/docs/baseline-results/latest.json        (Vite static serving copy)"
 
           git push origin HEAD
-          echo "✅ Baseline results committed and pushed successfully"
+          echo "✅ Baseline results committed and pushed to both docs/ and public/ successfully"
 
       # ── Step 8: Job summary ────────────────────────────────────────────────
       - name: Job summary
@@ -307,9 +343,9 @@ jobs:
           echo "- \`docs/baseline-results/checkpoint.json\` — resume checkpoint" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Notes" >> $GITHUB_STEP_SUMMARY
-          echo "- \`OPENAI_API_KEY\` is required for narrative parsing" >> $GITHUB_STEP_SUMMARY
+          echo "- \`OPENAI_API_KEY\` is required for narrative parsing; without it \`narrativeParsingSucceeded\` will be \`false\` for all companies" >> $GITHUB_STEP_SUMMARY
           echo "- Commits use \`[skip ci]\` to prevent workflow loops" >> $GITHUB_STEP_SUMMARY
-          echo "- Use \`--resume\` flag locally to continue from \`checkpoint.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Use \`--resume\` flag locally to continue an interrupted run from \`checkpoint.json\`" >> $GITHUB_STEP_SUMMARY
 
   # ── Failure notification job ──────────────────────────────────────────────
   notify-on-failure:
@@ -324,10 +360,12 @@ jobs:
           echo "::error title=SEC Baseline Run Failed::The SEC runtime baseline workflow failed. Check the workflow logs for details."
           echo "## ❌ SEC Runtime Baseline Failed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The SEC baseline run failed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Possible causes:**" >> $GITHUB_STEP_SUMMARY
           echo "- EDGAR rate limiting (HTTP 429) — reduce \`--concurrency\` and retry" >> $GITHUB_STEP_SUMMARY
-          echo "- \`OPENAI_API_KEY\` secret missing or expired" >> $GITHUB_STEP_SUMMARY
-          echo "- \`SUPABASE_URL\` / \`SUPABASE_ANON_KEY\` missing" >> $GITHUB_STEP_SUMMARY
+          echo "- \`OPENAI_API_KEY\` secret missing or expired — narrative parsing will fail" >> $GITHUB_STEP_SUMMARY
+          echo "- \`SUPABASE_URL\` / \`SUPABASE_ANON_KEY\` missing — Supabase writes skipped" >> $GITHUB_STEP_SUMMARY
           echo "- Network timeout fetching a large 10-K HTML document" >> $GITHUB_STEP_SUMMARY
           echo "- TypeScript compilation error in \`runSECBaseline.ts\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
