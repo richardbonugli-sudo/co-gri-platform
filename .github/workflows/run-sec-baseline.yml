@@ -90,11 +90,12 @@ jobs:
       # ── Step 3: Install dependencies ───────────────────────────────────────
       - name: Install dependencies
         run: |
-          # Use npm install instead of npm ci to handle missing/stale lock file gracefully
+          # Use --legacy-peer-deps as a safety net for peer dependency drift
+          # (e.g. @eslint/js version mismatches with eslint)
           if [ -f package-lock.json ]; then
-            npm ci --prefer-offline
+            npm ci --prefer-offline --legacy-peer-deps
           else
-            npm install
+            npm install --legacy-peer-deps
           fi
         env:
           NODE_ENV: development
