@@ -139,15 +139,15 @@ jobs:
           # If SUPABASE_URL and SUPABASE_ANON_KEY are both missing AND this is not a dry run,
           # we must abort — the script will exit(1) itself, but let's be explicit here.
           DRY_RUN_INPUT="${{ github.event.inputs.dry_run }}"
-          if [ "$DRY_RUN_INPUT" != "true" ] && [ -z "$SUPABASE_URL" ] && [ -z "$SUPABASE_ANON_KEY" ]; then
+                    if [ "$DRY_RUN_INPUT" != "true" ] && [ -z "$SUPABASE_URL" ] && [ -z "$SUPABASE_ANON_KEY" ]; then
             echo ""
-            echo "❌ FATAL: Both SUPABASE_URL and SUPABASE_ANON_KEY are missing."
-            echo "   Cannot run in live mode without Supabase credentials."
-            echo "   Options:"
-            echo "     1. Add SUPABASE_URL and SUPABASE_ANON_KEY to repository secrets"
-            echo "     2. Re-run with dry_run=true to test without API calls"
-            exit 1
+            echo "⚠️  WARNING: SUPABASE_URL and/or SUPABASE_ANON_KEY are missing."
+            echo "   Continuing in degraded mode — the script will write a results"
+            echo "   file explaining the missing secrets so the dashboard can show"
+            echo "   a meaningful error instead of a blank placeholder."
+            echo ""
           fi
+
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
@@ -375,3 +375,5 @@ jobs:
           echo "Re-run the workflow with \`dry_run=true\` to validate the setup without making any API calls." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Action required:** Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details." >> $GITHUB_STEP_SUMMARY
+fix: remove exit 1 from secrets check so workflow completes in degraded mode
+
