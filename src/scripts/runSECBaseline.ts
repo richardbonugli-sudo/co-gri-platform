@@ -363,7 +363,7 @@ interface RunSummary {
   failedCompanies: number;
   skippedCompanies: number;
   results: BaselineResult[];
-    error?: string;
+  error?: string;
   _degradedMode?: boolean;
   _degradedReason?: string;
 }
@@ -529,7 +529,7 @@ async function fetchFiling(cik: string, isADR: boolean): Promise<FilingResult> {
         filingDate?: string;
         reportDate?: string;
         formType?: string;
-        error?: string;
+      error?: string;
       }>('fetch_sec_filing', { cik, formType });
 
       if (result.html && result.htmlLength && result.htmlLength > 1000) {
@@ -659,7 +659,7 @@ async function parseNarrative(html: string, ticker: string): Promise<NarrativePa
     verbose(`  Calling extract_geographic_narrative for ${ticker}...`);
     const result = await callEdgeFunction<{
       extractions?: Array<{ country?: string; region?: string; confidence?: string }>;
-      error?: string;
+    error?: string;
     }>('extract_geographic_narrative', {
       text: textContent,
       sectionName: 'Annual Report',
@@ -1370,4 +1370,3 @@ main().catch(err => {
   console.error(`[FATAL] ${String(err)}`);
   process.exit(0);
 });
-fix: write error-state results file when secrets missing (exit 0)
