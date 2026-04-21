@@ -82,17 +82,16 @@ jobs:
     steps:
       # ── Step 1: Checkout repository ────────────────────────────────────────
       - name: Checkout repository
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4        # ✅ FIX: was @v4.2.2 (Node 20 runtime) → @v4 (Node 24 native)
         with:
-          # Use a token with write permissions for the commit step
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
       # ── Step 2: Setup Node.js ───────────────────────────────────────────────
       - name: Setup Node.js
-        uses: actions/setup-node@v4.4.0
+        uses: actions/setup-node@v4      # ✅ FIX: was @v4.4.0 (Node 20 runtime) → @v4 (Node 24 native)
         with:
-          node-version: '24'   # ✅ FIX: was '22' — must match FORCE_JAVASCRIPT_ACTIONS_TO_NODE24
+          node-version: '24'
           cache: 'npm'
 
       # ── Step 3: Install dependencies ───────────────────────────────────────
@@ -101,8 +100,6 @@ jobs:
         # vitest, etc.) are required at runtime in this workflow. npm ci with
         # NODE_ENV=production skips devDependencies entirely, causing tsx to be
         # missing when Step 5 runs the baseline script.
-        # ✅ FIX: removed --prefer-offline (fresh runners have no local cache;
-        #         --prefer-offline caused silent install failures on first run)
         run: npm ci
         env:
           NODE_ENV: development
@@ -194,16 +191,15 @@ jobs:
           echo "▶ ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts $FLAGS"
           echo ""
 
-          # ✅ FIX: Use the locally installed tsx binary instead of npx tsx.
-          # npx tsx can attempt a live network download if not cached, which is
-          # unreliable in CI. tsx is in devDependencies and installed by Step 3.
+          # Use the locally installed tsx binary (in node_modules/.bin/) rather
+          # than npx tsx. npx would attempt a network download if tsx is not
+          # cached, which fails in offline/restricted environments and is slower.
+          # tsx is listed in devDependencies and installed by Step 3 (NODE_ENV=development).
           ./node_modules/.bin/tsx src/scripts/runSECBaseline.ts $FLAGS
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          # NODE_ENV is intentionally NOT set to 'production' here so that
-          # Node.js module resolution behaves consistently with the install step.
           NODE_ENV: development
 
       # ── Step 6: Check if results were written ─────────────────────────────
@@ -227,7 +223,6 @@ jobs:
           fi
 
           # Check for new untracked files (first-ever run has no tracked files yet)
-          # Use tr -d ' ' to strip whitespace before numeric comparison (portable across shells)
           UNTRACKED=$(git ls-files --others --exclude-standard docs/baseline-results/ 2>/dev/null | wc -l | tr -d ' ')
           if [ "$UNTRACKED" -gt "0" ]; then
             CHANGED=true
@@ -244,7 +239,6 @@ jobs:
           mkdir -p public/docs/baseline-results
           mkdir -p docs/baseline-results
 
-          # Explicit error if latest.json is missing after the script run
           if [ ! -f docs/baseline-results/latest.json ]; then
             echo "::error title=Missing Output File::docs/baseline-results/latest.json was not found after the script completed."
             echo ""
@@ -263,15 +257,13 @@ jobs:
           cp docs/baseline-results/latest.json public/docs/baseline-results/latest.json
           echo "Copied latest.json to public/docs/baseline-results/"
 
-          # Verify the copy succeeded and is not the placeholder
           RUN_ID=$(node -e "try{const d=require('./public/docs/baseline-results/latest.json');console.log(d.runId||'unknown')}catch(e){console.log('error')}")
           echo "Run ID in public copy: $RUN_ID"
           RESULT_COUNT=$(node -e "try{const d=require('./public/docs/baseline-results/latest.json');console.log((d.results||[]).length)}catch(e){console.log(0)}")
           echo "Results count: $RESULT_COUNT companies"
 
-          # Warn if the public copy still contains the placeholder sentinel
           if [ "$RUN_ID" = "pending-first-run" ]; then
-            echo "::warning title=Placeholder Sentinel Detected::The copied latest.json still contains runId=pending-first-run. The script may not have written real results."
+            echo "::warning title=Placeholder Sentinel Detected::The copied latest.json still contains runId=pending-first-run."
             echo "WARNING: public copy still contains placeholder sentinel (runId=pending-first-run)"
             echo "The dashboard will show no data until a real run writes actual results."
           fi
@@ -288,13 +280,10 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Stage docs/baseline-results/ AND public/docs/baseline-results/
           git add docs/baseline-results/ public/docs/baseline-results/
 
-          # Summarise what changed
           CHANGED_STAT=$(git diff --cached --stat docs/baseline-results/ | tail -1)
 
-          # Build a descriptive commit message
           CATEGORY="${{ github.event.inputs.category }}"
           TICKER="${{ github.event.inputs.ticker }}"
           TICKER_NOTE=""
@@ -302,7 +291,6 @@ jobs:
             TICKER_NOTE=" (ticker: $TICKER)"
           fi
 
-          # Commit with [skip ci] to prevent triggering other workflows
           git commit -m "chore(data): sec-baseline results — category <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>C</mi><mi>A</mi><mi>T</mi><mi>E</mi><mi>G</mi><mi>O</mi><mi>R</mi><mi>Y</mi></mrow><annotation encoding="application/x-tex">CATEGORY</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em;"></span><span class="mord mathnormal" style="margin-right:0.07153em;">C</span><span class="mord mathnormal">A</span><span class="mord mathnormal" style="margin-right:0.00773em;">TEGOR</span><span class="mord mathnormal" style="margin-right:0.22222em;">Y</span></span></span></span>TICKER_NOTE [skip ci]
 
           Automated SEC runtime baseline via GitHub Actions
