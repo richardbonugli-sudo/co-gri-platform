@@ -375,5 +375,3 @@ jobs:
           echo "Re-run the workflow with \`dry_run=true\` to validate the setup without making any API calls." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Action required:** Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details." >> $GITHUB_STEP_SUMMARY
-fix: remove exit 1 from secrets check so workflow completes in degraded mode
-
