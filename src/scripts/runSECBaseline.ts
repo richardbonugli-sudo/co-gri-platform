@@ -363,6 +363,9 @@ interface RunSummary {
   failedCompanies: number;
   skippedCompanies: number;
   results: BaselineResult[];
+    error?: string;
+  _degradedMode?: boolean;
+  _degradedReason?: string;
 }
 
 // ─── Logging ──────────────────────────────────────────────────────────────────
