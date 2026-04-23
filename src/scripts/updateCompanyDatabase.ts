@@ -137,6 +137,56 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ─── Exponential Backoff Retry Utility ───────────────────────────────────────
+
+/**
+ * Retries an async function with exponential backoff on transient errors.
+ *
+ * Only retries on errors whose message contains '429', '503', or 'Timeout'.
+ * Delay formula: baseDelayMs * 2^attempt * (1 + jitter) where jitter is ±20%.
+ *
+ * @param fn          - Async function to call
+ * @param maxRetries  - Maximum number of retry attempts (default: 4)
+ * @param baseDelayMs - Base delay in milliseconds (default: 1000)
+ * @param label       - Human-readable label for log messages (default: 'request')
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 4,
+  baseDelayMs = 1000,
+  label = 'request'
+): Promise<T> {
+  const RETRYABLE = ['429', '503', 'Timeout'];
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = String(err);
+      const isRetryable = RETRYABLE.some(code => msg.includes(code));
+
+      if (!isRetryable) {
+        // Non-retryable error — propagate immediately
+        throw err;
+      }
+
+      if (attempt === maxRetries) {
+        warn(`${label} failed after ${maxRetries} retries: ${msg}`);
+        throw err;
+      }
+
+      // Exponential backoff with ±20% jitter
+      const jitter = 1 + (Math.random() * 0.4 - 0.2); // range [0.8, 1.2]
+      const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt) * jitter);
+      warn(`${label} retryable error (attempt ${attempt + 1}/${maxRetries}), retrying in ${delayMs}ms: ${msg}`);
+      await sleep(delayMs);
+    }
+  }
+
+  // TypeScript requires a return here; unreachable in practice
+  throw new Error(`${label}: retryWithBackoff exhausted`);
+}
+
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 function log(msg: string): void {
@@ -174,7 +224,10 @@ async function fetchFMPBulkList(): Promise<Map<string, FMPStockListItem>> {
   log('Fetching FMP bulk stock list (single API call)...');
   const url = `${FMP_BASE_URL}/stock/list?apikey=${FMP_API_KEY}`;
 
-  const data = await httpsGet<FMPStockListItem[]>(url);
+  const data = await retryWithBackoff(
+    () => httpsGet<FMPStockListItem[]>(url),
+    4, 1000, 'fetchFMPBulkList'
+  );
 
   if (!Array.isArray(data)) {
     throw new Error(`Unexpected FMP response: ${JSON.stringify(data).slice(0, 200)}`);
@@ -200,7 +253,10 @@ async function fetchFMPBulkList(): Promise<Map<string, FMPStockListItem>> {
 async function fetchFMPProfile(ticker: string): Promise<FMPProfile | null> {
   try {
     const url = `${FMP_BASE_URL}/profile/${encodeURIComponent(ticker)}?apikey=${FMP_API_KEY}`;
-    const data = await httpsGet<FMPProfile[]>(url);
+    const data = await retryWithBackoff(
+      () => httpsGet<FMPProfile[]>(url),
+      4, 1000, `fetchFMPProfile(${ticker})`
+    );
 
     if (!Array.isArray(data) || data.length === 0) {
       return null;
