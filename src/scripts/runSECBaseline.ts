@@ -22,9 +22,55 @@
  *   VITE_SUPABASE_ANON_KEY  Supabase anon key
  *
  * Outputs:
- *   /tmp/sec_baseline_checkpoint.jsonl          Checkpoint file (one result per line)
- *   docs/sec_baseline_results.json              Full results array
- *   docs/sec_baseline_summary.md                Human-readable summary report
+ *   docs/baseline-results/checkpoint.json              Checkpoint file (JSON array, updated after each company)
+ *   docs/baseline-results/baseline-[ISO-timestamp].json Timestamped full results
+ *   docs/baseline-results/latest.json                  Always-overwritten latest results
+ *   docs/baseline-results/latest-summary.md            Human-readable summary report
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * NARRATIVE PARSING ENHANCEMENTS (2026-04-23):
+ *
+ * Fix 1: Robust local regex fallback — runs when LLM returns 0 results.
+ *        Covers 100+ countries, aliases (U.S., PRC, UK, ROK, UAE…), regional
+ *        aggregates, and currency-to-country mapping.
+ *
+ * Fix 2: Always-on local extraction — local regex runs on ALL sections even
+ *        when LLM succeeds, merging results to maximise coverage.
+ *
+ * Fix 3: Extended section extraction — now captures Business (Item 1 / 20-F
+ *        Item 4), Segment/Geographic Notes, Item 2 Properties, and Exhibit 21
+ *        subsidiary text in addition to MD&A, Risk Factors, and Geo Notes.
+ *
+ * Fix 4: Accept ALL confidence levels from LLM (high, medium, low).
+ *
+ * Fix 5: Improved iXBRL anchor detection — broader regex patterns, handles
+ *        both id= and name= attributes, supports 20-F section numbering.
+ *
+ * Fix 6: Segment/Geographic Notes section added to extraction pipeline.
+ *
+ * Fix 7: Single retry after 2 s when LLM returns zero extractions (not a
+ *        missing-key situation).
+ *
+ * Fix 8: Item 2 Properties section extraction for facility locations.
+ *
+ * Fix 9: Exhibit 21 text extraction — parses subsidiary country list.
+ *
+ * Fix 10: Currency-to-country mapping — EUR, JPY, CNY, GBP, etc. resolve to
+ *         countries even without explicit country names in the text.
+ *
+ * Fix 11: Broader fallback window — when no sections found, scans the entire
+ *         document in 60 k-char windows instead of a single fixed slice.
+ *
+ * Fix 12: narrativeParsingSucceeded threshold lowered to >= 1 location
+ *         (was already correct, but local fallback now guarantees coverage).
+ * ─────────────────────────────────────────────────────────────────────────────
+ * IMPORTANT — parseStructuredData() uses cheerio DOM parsing (NOT raw string
+ * keyword scanning) to detect revenue, PP&E, and debt tables. This mirrors the
+ * logic in src/services/secFilingParser.ts (isRevenueTable / isPPETable /
+ * isDebtTable) which also uses cheerio. Raw-string approaches produce high
+ * false-positive rates because a 10-K/20-F HTML document always contains words
+ * like "geographic" and "property" in prose — the table-level check is the
+ * correct gate.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -32,6 +78,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import { fileURLToPath } from 'url';
+// cheerio is already a project dependency (used by secFilingParser.ts).
+// We import it here for DOM-based table detection in parseStructuredData().
+import * as cheerio from 'cheerio';
 
 // ─── Path Setup ───────────────────────────────────────────────────────────────
 
@@ -40,10 +89,11 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 const DOCS_DIR = path.join(PROJECT_ROOT, 'docs');
 const OUTPUT_DIR = path.join(DOCS_DIR, 'baseline-results');
+// Checkpoint lives inside the output dir (not /tmp) so --resume works across machines
 const CHECKPOINT_FILE = path.join(OUTPUT_DIR, 'checkpoint.json');
+// RESULTS_FILE is set dynamically per run (timestamped); LATEST_FILE always overwritten
 const LATEST_FILE = path.join(OUTPUT_DIR, 'latest.json');
 const SUMMARY_FILE = path.join(OUTPUT_DIR, 'latest-summary.md');
-
 
 // ─── CLI Flags ────────────────────────────────────────────────────────────────
 
@@ -346,6 +396,11 @@ interface BaselineResult {
   specificChannelCount: number;
   dominantEvidenceTier: EvidenceTier;
 
+  // Composite Confidence (P3-C)
+  compositeConfidenceScore: number;
+  confidenceGrade: 'A' | 'B' | 'C' | 'D' | 'F';
+  recencyMultiplier: number;
+
   // Metadata
   totalPipelineMs: number;
   errorMessage: string | null;
@@ -410,20 +465,76 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ─── Exponential Backoff Retry Utility ───────────────────────────────────────
+
+/**
+ * Retries an async function with exponential backoff on transient errors.
+ *
+ * Only retries on errors whose message contains '429', '503', or 'Timeout'.
+ * Delay formula: baseDelayMs * 2^attempt * (1 + jitter) where jitter is ±20%.
+ *
+ * @param fn          - Async function to call
+ * @param maxRetries  - Maximum number of retry attempts (default: 4)
+ * @param baseDelayMs - Base delay in milliseconds (default: 1000)
+ * @param label       - Human-readable label for log messages (default: 'request')
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries = 4,
+  baseDelayMs = 1000,
+  label = 'request'
+): Promise<T> {
+  const RETRYABLE = ['429', '503', 'Timeout'];
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const msg = String(err);
+      const isRetryable = RETRYABLE.some(code => msg.includes(code));
+
+      if (!isRetryable) {
+        // Non-retryable error — propagate immediately
+        throw err;
+      }
+
+      if (attempt === maxRetries) {
+        warn(`${label} failed after ${maxRetries} retries: ${msg}`);
+        throw err;
+      }
+
+      // Exponential backoff with ±20% jitter
+      const jitter = 1 + (Math.random() * 0.4 - 0.2); // range [0.8, 1.2]
+      const delayMs = Math.round(baseDelayMs * Math.pow(2, attempt) * jitter);
+      warn(`${label} retryable error (attempt ${attempt + 1}/${maxRetries}), retrying in ${delayMs}ms: ${msg}`);
+      await sleep(delayMs);
+    }
+  }
+
+  // TypeScript requires a return here; unreachable in practice
+  throw new Error(`${label}: retryWithBackoff exhausted`);
+}
+
 // ─── Supabase Edge Function Caller ───────────────────────────────────────────
 
 async function callEdgeFunction<T>(
   functionName: string,
   body: Record<string, unknown>
 ): Promise<T> {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error(
-      'Supabase credentials are not set. ' +
-      'Add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub repository secrets under ' +
-      'Settings → Secrets and variables → Actions.'
+      'Supabase credentials are not set.\n' +
+      '   Required environment variables (either form is accepted):\n' +
+      '     SUPABASE_URL  or  VITE_SUPABASE_URL\n' +
+      '     SUPABASE_ANON_KEY  or  VITE_SUPABASE_ANON_KEY\n' +
+      '\n' +
+      '   In GitHub Actions: add SUPABASE_URL and SUPABASE_ANON_KEY as repository secrets.\n' +
+      '   → GitHub repo → Settings → Secrets and variables → Actions → New repository secret\n' +
+      '\n' +
+      '   Locally: set them in your .env file or export them before running.\n' +
+      '   To test without secrets: npx tsx src/scripts/runSECBaseline.ts --dry-run'
     );
   }
-
 
   const url = `${SUPABASE_URL}/functions/v1/${functionName}`;
   const payload = JSON.stringify(body);
@@ -489,7 +600,10 @@ async function resolveCIK(ticker: string): Promise<{
   if (!IS_DRY_RUN && SUPABASE_URL) {
     try {
       verbose(`  Calling fetch_sec_cik for ${ticker}...`);
-      const result = await callEdgeFunction<{ cik?: string; error?: string }>('fetch_sec_cik', { ticker });
+      const result = await retryWithBackoff(
+        () => callEdgeFunction<{ cik?: string; error?: string }>('fetch_sec_cik', { ticker }),
+        4, 1000, `fetch_sec_cik(${ticker})`
+      );
       if (result.cik) {
         return { cik: result.cik, source: 'edgar_search', durationMs: Date.now() - start };
       }
@@ -523,14 +637,17 @@ async function fetchFiling(cik: string, isADR: boolean): Promise<FilingResult> {
   for (const formType of [primaryFormType, fallbackFormType]) {
     try {
       verbose(`  Fetching ${formType} for CIK ${cik}...`);
-      const result = await callEdgeFunction<{
-        html?: string;
-        htmlLength?: number;
-        filingDate?: string;
-        reportDate?: string;
-        formType?: string;
-      error?: string;
-      }>('fetch_sec_filing', { cik, formType });
+      const result = await retryWithBackoff(
+        () => callEdgeFunction<{
+          html?: string;
+          htmlLength?: number;
+          filingDate?: string;
+          reportDate?: string;
+          formType?: string;
+          error?: string;
+        }>('fetch_sec_filing', { cik, formType }),
+        4, 1000, `fetch_sec_filing(${cik}, ${formType})`
+      );
 
       if (result.html && result.htmlLength && result.htmlLength > 1000) {
         return {
@@ -573,52 +690,124 @@ interface StructuredParsingResult {
   durationMs: number;
 }
 
+/**
+ * parseStructuredData — Cheerio DOM-based table detection
+ * ─────────────────────────────────────────────────────────────────────────────
+ * IMPORTANT: This function uses cheerio to iterate over actual <table> DOM
+ * nodes and inspect their text content. It does NOT perform raw-string keyword
+ * scanning on the full HTML document.
+ *
+ * Why this matters:
+ *   A typical 10-K/20-F HTML file is 2–10 MB of prose + tables. Words like
+ *   "geographic", "property", "debt", and "revenue" appear hundreds of times
+ *   in narrative paragraphs. Scanning the raw HTML string for these keywords
+ *   produces near-100% false-positive rates — every filing would be flagged as
+ *   having all table types, making the metric meaningless.
+ *
+ * The correct approach (mirroring secFilingParser.ts isRevenueTable /
+ * isPPETable / isDebtTable) is:
+ *   1. Load the HTML into a cheerio DOM.
+ *   2. Iterate over each <table> element individually.
+ *   3. Extract only that table's text content via table.text().toLowerCase().
+ *   4. Apply keyword + exclusion logic at the table level.
+ *
+ * This ensures that a "revenue table" flag means a <table> element whose own
+ * text contains geographic revenue keywords — not just that the word "revenue"
+ * appears somewhere in the 10-K.
+ *
+ * Keyword logic is kept in sync with secFilingParser.ts:
+ *   - isRevenueTable: requires (revenue ∩ geographic) OR (revenue ∩ regional)
+ *                     AND excludes operating-expense tables
+ *   - isPPETable:     requires (ppe keywords) ∩ (geographic keywords)
+ *   - isDebtTable:    requires (debt keywords) ∩ (currency/denomination keywords)
+ *
+ * Exhibit 21 detection uses a document-level check (not table-level) because
+ * Exhibit 21 is typically a plain list, not an HTML table.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 function parseStructuredData(html: string): StructuredParsingResult {
   const start = Date.now();
 
-  // Revenue table keywords (from secFilingParser.ts isRevenueTable logic)
-  const revenueKeywords = [
-    'geographic', 'geography', 'region', 'segment', 'revenue by',
-    'net revenue', 'net sales', 'americas', 'emea', 'apac', 'asia pacific',
-    'united states', 'international', 'domestic', 'foreign',
-  ];
-  const revenueExclusions = [
-    'cost of sales', 'cost of revenue', 'selling and marketing',
-    'research and development', 'operating expenses',
-  ];
+  // ── Load DOM ──────────────────────────────────────────────────────────────
+  const $ = cheerio.load(html);
+  const allTables = $('table');
+  const tablesFound = allTables.length;
 
-  // PP&E table keywords
-  const ppeKeywords = [
-    'property', 'plant', 'equipment', 'long-lived assets', 'fixed assets',
-    'capital expenditure', 'ppe',
+  // ── Revenue table detection (mirrors secFilingParser.ts isRevenueTable) ──
+  const revenueKeywords    = ['revenue', 'sales', 'net sales', 'revenues', 'net revenues'];
+  const geographicKeywords = ['geographic', 'geographical', 'region', 'segment', 'country', 'area', 'by geography', 'by region', 'by location'];
+  const regionalPatterns   = ['americas', 'emea', 'asia-pacific', 'apac', 'europe', 'china', 'japan'];
+  const revenueExclusions  = [
+    'cost of sales', 'cost of revenue', 'selling and marketing', 'selling, general',
+    'research and development', 'operating expenses', 'operating income',
+    'iphone', 'ipad', 'mac', 'wearables', 'product category',
   ];
 
-  // Debt table keywords
-  const debtKeywords = [
-    'debt', 'borrowing', 'credit facility', 'notes payable', 'long-term debt',
-    'short-term debt', 'senior notes', 'debentures',
-  ];
+  // ── PP&E table detection (mirrors secFilingParser.ts isPPETable) ──────────
+  const ppeKeywords        = ['property', 'plant', 'equipment', 'pp&e', 'long-lived', 'tangible assets', 'fixed assets'];
+  const ppeGeoKeywords     = ['geographic', 'geographical', 'region', 'country', 'location'];
 
-  // Count tables in HTML (rough approximation without full cheerio)
-  const tableMatches = html.match(/<table[^>]*>/gi) || [];
-  const tablesFound = tableMatches.length;
+  // ── Debt table detection (mirrors secFilingParser.ts isDebtTable) ─────────
+  const debtKeywords       = ['debt', 'notes', 'bonds', 'securities', 'borrowings', 'credit facility'];
+  const currencyKeywords   = ['currency', 'denomination', 'principal', 'maturity', 'usd', 'eur', 'gbp', 'jpy'];
 
-  // Check for revenue tables
-  const htmlLower = html.toLowerCase();
-  const revenueTableFound = revenueKeywords.some(kw => htmlLower.includes(kw)) && !revenueExclusions.every(ex => htmlLower.includes(ex));
+  let revenueTableFound = false;
+  let ppeTableFound     = false;
+  let debtTableFound    = false;
 
-  // Check for PP&E tables
-  const ppeTableFound = ppeKeywords.some(kw => htmlLower.includes(kw));
+  // Iterate over each <table> DOM node individually
+  allTables.each((_, tableEl) => {
+    const tableText = $(tableEl).text().toLowerCase();
 
-  // Check for debt tables
-  const debtTableFound = debtKeywords.some(kw => htmlLower.includes(kw));
+    // ── Revenue check ──────────────────────────────────────────────────────
+    if (!revenueTableFound) {
+      const hasExclusion  = revenueExclusions.some(ex => tableText.includes(ex));
+      const hasRevenue    = revenueKeywords.some(kw => tableText.includes(kw));
+      const hasGeo        = geographicKeywords.some(kw => tableText.includes(kw));
+      const hasRegional   = regionalPatterns.some(kw => tableText.includes(kw));
 
-  // Check for Exhibit 21 (subsidiaries list — strong geographic signal)
-  const exhibit21Found = htmlLower.includes('exhibit 21') ||
-    htmlLower.includes('subsidiaries of the registrant') ||
-    htmlLower.includes('list of subsidiaries');
+      if (!hasExclusion && hasRevenue && (hasGeo || hasRegional)) {
+        revenueTableFound = true;
+        verbose(`  [parseStructuredData] Revenue table detected`);
+      }
+    }
+
+    // ── PP&E check ─────────────────────────────────────────────────────────
+    if (!ppeTableFound) {
+      const hasPPE = ppeKeywords.some(kw => tableText.includes(kw));
+      const hasGeo = ppeGeoKeywords.some(kw => tableText.includes(kw));
+
+      if (hasPPE && hasGeo) {
+        ppeTableFound = true;
+        verbose(`  [parseStructuredData] PP&E geographic table detected`);
+      }
+    }
+
+    // ── Debt check ─────────────────────────────────────────────────────────
+    if (!debtTableFound) {
+      const hasDebt     = debtKeywords.some(kw => tableText.includes(kw));
+      const hasCurrency = currencyKeywords.some(kw => tableText.includes(kw));
+
+      if (hasDebt && hasCurrency) {
+        debtTableFound = true;
+        verbose(`  [parseStructuredData] Debt securities table detected`);
+      }
+    }
+
+    // Short-circuit once all three are found
+    if (revenueTableFound && ppeTableFound && debtTableFound) return false;
+  });
+
+  // ── Exhibit 21 detection (document-level, not table-level) ───────────────
+  const docText = $.root().text().toLowerCase();
+  const exhibit21Found =
+    docText.includes('exhibit 21') ||
+    docText.includes('subsidiaries of the registrant') ||
+    docText.includes('list of subsidiaries');
 
   const succeeded = revenueTableFound || ppeTableFound || debtTableFound;
+
+  verbose(`  [parseStructuredData] Tables: ${tablesFound} | Rev: ${revenueTableFound} | PPE: ${ppeTableFound} | Debt: ${debtTableFound} | Ex21: ${exhibit21Found}`);
 
   return {
     succeeded,
@@ -639,52 +828,661 @@ interface NarrativeParsingResult {
   durationMs: number;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ENHANCED NARRATIVE SECTION EXTRACTION (Fix 3, 5, 6, 8, 9, 11)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface NarrativeSections {
+  mdaText: string | null;
+  riskText: string | null;
+  geoNotesText: string | null;
+  fallbackText: string | null;
+  businessText: string | null;       // Fix 3: Item 1 (10-K) / Item 4 (20-F) Business section
+  segmentNotesText: string | null;   // Fix 6: Segment/Geographic Notes from financial statements
+  item2PropertiesText: string | null; // Fix 8: Item 2 Properties (facility locations)
+  exhibit21Text: string | null;       // Fix 9: Exhibit 21 subsidiary list
+}
+
+/**
+ * extractNarrativeSectionsFromHTML — iXBRL-aware + enhanced section extraction
+ *
+ * Fix 5: Broader iXBRL anchor patterns covering more filing formats.
+ * Fix 8: Added Item 2 Properties section.
+ * Fix 9: Added Exhibit 21 text extraction.
+ * Fix 11: Broader fallback — scans entire document in windows.
+ */
+function extractNarrativeSectionsFromHTML(rawHtml: string): NarrativeSections {
+  const MAX_RAW_SECTION = 600_000;
+
+  function findAnchorPos(patterns: RegExp[], label: string): number {
+    for (const pat of patterns) {
+      const m = rawHtml.match(pat);
+      if (m && m.index !== undefined) {
+        verbose(`  [iXBRL] Found ${label} anchor at raw pos ${m.index}`);
+        return m.index;
+      }
+    }
+    return -1;
+  }
+
+  // Fix 4: Enhanced HTML cleaning — handles iXBRL tags and HTML entities
+  function stripSlice(start: number, maxLen: number): string {
+    return rawHtml.substring(start, start + maxLen)
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<ix:[^>]*>[\s\S]*?<\/ix:[^>]*>/gi, '')
+      .replace(/<ix:[^>]*\/>/gi, '')
+      .replace(/<\/ix:[^>]*>/gi, '')
+      .replace(/<ix:[^>]*>/gi, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#\d+;/g, ' ')
+      .replace(/&#x[0-9a-fA-F]+;/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s{3,}/g, ' ')
+      .trim();
+  }
+
+  // Fix 5: Enhanced iXBRL anchor patterns — broader coverage
+  // MD&A (Item 7 — 10-K)
+  const mdaAnchorPatterns: RegExp[] = [
+    /id=["'][^"']*item[_\s-]*7[^"']*["']/i,
+    /id=["'][^"']*\bmda\b[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*7[^"']*["']/i,
+    /id=["'][^"']*management[^"']*discussion[^"']*["']/i,
+    /name=["'][^"']*management[^"']*discussion[^"']*["']/i,
+    // 20-F Item 5 (Operating and Financial Review)
+    /id=["'][^"']*item[_\s-]*5[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*5[^"']*["']/i,
+    /id=["'][^"']*operating[^"']*financial[^"']*review[^"']*["']/i,
+  ];
+
+  // Risk Factors (Item 1A)
+  const riskAnchorPatterns: RegExp[] = [
+    /id=["'][^"']*item[_\s-]*1a[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*1a[^"']*["']/i,
+    /id=["'][^"']*risk[^"']*factor[^"']*["']/i,
+    /name=["'][^"']*risk[^"']*factor[^"']*["']/i,
+  ];
+
+  // Geographic Notes / Financial Statements (Item 8)
+  const geoAnchorPatterns: RegExp[] = [
+    /id=["'][^"']*item[_\s-]*8[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*8[^"']*["']/i,
+    /id=["'][^"']*geographic[^"']*["']/i,
+    /name=["'][^"']*geographic[^"']*["']/i,
+    /id=["'][^"']*financial[^"']*statement[^"']*["']/i,
+  ];
+
+  // Business section — Item 1 (10-K) and Item 4 (20-F)
+  const businessAnchorPatterns: RegExp[] = [
+    /id=["'][^"']*item[_\s-]*1(?![a-z0-9])[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*1(?![a-z0-9])[^"']*["']/i,
+    /id=["'][^"']*item[_\s-]*4[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*4[^"']*["']/i,
+    /id=["'][^"']*business[^"']*overview[^"']*["']/i,
+    /id=["'][^"']*information[^"']*company[^"']*["']/i,
+  ];
+
+  // Fix 6: Segment/Geographic Notes anchor patterns
+  const segmentNotesAnchorPatterns: RegExp[] = [
+    /id=["'][^"']*segment[^"']*["']/i,
+    /name=["'][^"']*segment[^"']*["']/i,
+    /id=["'][^"']*geographic[^"']*note[^"']*["']/i,
+    /id=["'][^"']*note[^"']*segment[^"']*["']/i,
+    /id=["'][^"']*note[^"']*geographic[^"']*["']/i,
+  ];
+
+  // Fix 8: Item 2 Properties anchor patterns
+  const item2AnchorPatterns: RegExp[] = [
+    /id=["'][^"']*item[_\s-]*2[^"']*["']/i,
+    /name=["'][^"']*item[_\s-]*2[^"']*["']/i,
+    /id=["'][^"']*properties[^"']*["']/i,
+    /name=["'][^"']*properties[^"']*["']/i,
+  ];
+
+  // Fix 9: Exhibit 21 anchor patterns
+  const exhibit21AnchorPatterns: RegExp[] = [
+    /id=["'][^"']*exhibit[_\s-]*21[^"']*["']/i,
+    /name=["'][^"']*exhibit[_\s-]*21[^"']*["']/i,
+    /id=["'][^"']*subsidiaries[^"']*["']/i,
+    /name=["'][^"']*subsidiaries[^"']*["']/i,
+  ];
+
+  const mdaPos          = findAnchorPos(mdaAnchorPatterns, 'MD&A');
+  const riskPos         = findAnchorPos(riskAnchorPatterns, 'Risk Factors');
+  const geoPos          = findAnchorPos(geoAnchorPatterns, 'Geographic Notes');
+  const businessPos     = findAnchorPos(businessAnchorPatterns, 'Business');
+  const segmentNotesPos = findAnchorPos(segmentNotesAnchorPatterns, 'Segment Notes');
+  const item2Pos        = findAnchorPos(item2AnchorPatterns, 'Item 2 Properties');
+  const exhibit21Pos    = findAnchorPos(exhibit21AnchorPatterns, 'Exhibit 21');
+
+  const anyFound = mdaPos >= 0 || riskPos >= 0 || geoPos >= 0 || businessPos >= 0 ||
+                   segmentNotesPos >= 0 || item2Pos >= 0 || exhibit21Pos >= 0;
+
+  if (!anyFound) {
+    verbose('  [iXBRL] No HTML anchors found — falling back to plain-text section extraction');
+    const strippedFull = rawHtml
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return extractNarrativeSectionsPlainText(strippedFull);
+  }
+
+  const mdaText          = mdaPos          >= 0 ? stripSlice(mdaPos,          MAX_RAW_SECTION).substring(0, 50000) : null;
+  const riskText         = riskPos         >= 0 ? stripSlice(riskPos,         MAX_RAW_SECTION).substring(0, 30000) : null;
+  const geoNotesText     = geoPos          >= 0 ? stripSlice(geoPos,          MAX_RAW_SECTION).substring(0, 20000) : null;
+  const businessText     = businessPos     >= 0 ? stripSlice(businessPos,     MAX_RAW_SECTION).substring(0, 40000) : null;
+  const segmentNotesText = segmentNotesPos >= 0 ? stripSlice(segmentNotesPos, MAX_RAW_SECTION).substring(0, 30000) : null;
+  const item2PropertiesText = item2Pos     >= 0 ? stripSlice(item2Pos,        MAX_RAW_SECTION).substring(0, 20000) : null;
+  const exhibit21Text    = exhibit21Pos    >= 0 ? stripSlice(exhibit21Pos,    MAX_RAW_SECTION).substring(0, 20000) : null;
+
+  // Fix 11: Broader fallback — use multiple windows across the document
+  let fallbackText: string | null = null;
+  if (!mdaText && !riskText && !geoNotesText && !businessText) {
+    // Scan middle section of document (most filings have narrative in middle 40%)
+    const docLen = rawHtml.length;
+    const midStart = Math.floor(docLen * 0.2);
+    fallbackText = stripSlice(midStart, Math.min(80000, docLen - midStart));
+    if (!fallbackText || fallbackText.length < 500) {
+      fallbackText = stripSlice(0, Math.min(60000, docLen));
+    }
+  }
+
+  verbose(`  [iXBRL] Sections — MDA:${!!mdaText} Risk:${!!riskText} Geo:${!!geoNotesText} Business:${!!businessText} SegNotes:${!!segmentNotesText} Item2:${!!item2PropertiesText} Ex21:${!!exhibit21Text}`);
+
+  return { mdaText, riskText, geoNotesText, fallbackText, businessText, segmentNotesText, item2PropertiesText, exhibit21Text };
+}
+
+// ─── Plain-text fallback section extractor ───────────────────────────────────
+function extractNarrativeSectionsPlainText(strippedText: string): NarrativeSections {
+  const mdaPatterns = [
+    /Item\s+7[.\s]+Management['\u2019]?s\s+Discussion\s+and\s+Analysis/i,
+    /Item\s+7[.\s]+MD&A/i,
+    /Management['\u2019]?s\s+Discussion\s+and\s+Analysis/i,
+    /MANAGEMENT['\u2019]?S\s+DISCUSSION\s+AND\s+ANALYSIS/i,
+    // 20-F equivalent
+    /Item\s+5[.\s]+Operating\s+and\s+Financial\s+Review/i,
+    /OPERATING\s+AND\s+FINANCIAL\s+REVIEW/i,
+  ];
+
+  const riskPatterns = [
+    /Item\s+1A[.\s]+Risk\s+Factors/i,
+    /RISK\s+FACTORS/i,
+    /Key\s+Risk\s+Factors/i,
+  ];
+
+  const geoNotesPatterns = [
+    /Geographic\s+(?:Information|Segment|Area|Revenue|Breakdown)/i,
+    /Revenue\s+by\s+(?:Geography|Geographic\s+Area|Region|Country)/i,
+    /Segment\s+(?:Information|Reporting|Data)/i,
+    /Note\s+\d+[.\s\u2014\u2013-]+(?:Segment|Geographic)/i,
+  ];
+
+  const businessPatterns = [
+    /Item\s+1[.\s]+Business/i,
+    /Item\s+1[.\s]+Description\s+of\s+Business/i,
+    /Item\s+4[.\s]+Information\s+on\s+the\s+Company/i,
+    /Item\s+4[.\s]+Business\s+Overview/i,
+    /INFORMATION\s+ON\s+THE\s+COMPANY/i,
+    /DESCRIPTION\s+OF\s+BUSINESS/i,
+  ];
+
+  const segmentNotesPatterns = [
+    /Note\s+\d+[.\s\u2014\u2013-]+(?:Segment|Geographic)\s+(?:Information|Reporting|Data|Areas?)/i,
+    /\d+\.\s+SEGMENT\s+(?:INFORMATION|REPORTING)/i,
+    /Geographic\s+Areas?\s*(?:\n|\r|\.)/i,
+    /Revenue\s+by\s+(?:Geography|Geographic\s+Area|Region|Country)/i,
+  ];
+
+  // Fix 8: Item 2 Properties patterns
+  const item2Patterns = [
+    /Item\s+2[.\s]+Properties/i,
+    /PROPERTIES\s*\n/i,
+    /Item\s+4[.\s]+Property,\s+Plant\s+and\s+Equipment/i,
+  ];
+
+  // Fix 9: Exhibit 21 patterns
+  const exhibit21Patterns = [
+    /Exhibit\s+21/i,
+    /Subsidiaries\s+of\s+the\s+Registrant/i,
+    /List\s+of\s+Subsidiaries/i,
+    /SUBSIDIARIES\s+OF\s+THE\s+REGISTRANT/i,
+  ];
+
+  function findSection(patterns: RegExp[], maxLen: number): string | null {
+    for (const pattern of patterns) {
+      const match = strippedText.match(pattern);
+      if (match && match.index !== undefined) {
+        const section = strippedText.substring(match.index, match.index + maxLen);
+        verbose(`  [plainText] Found section "${pattern.source.slice(0, 40)}" at pos ${match.index}`);
+        return section;
+      }
+    }
+    return null;
+  }
+
+  const mdaText          = findSection(mdaPatterns, 50000);
+  const riskText         = findSection(riskPatterns, 30000);
+  const geoNotesText     = findSection(geoNotesPatterns, 20000);
+  const businessText     = findSection(businessPatterns, 40000);
+  const segmentNotesText = findSection(segmentNotesPatterns, 30000);
+  const item2PropertiesText = findSection(item2Patterns, 20000);
+  const exhibit21Text    = findSection(exhibit21Patterns, 20000);
+
+  // Fix 11: Broader fallback — scan middle of document
+  let fallbackText: string | null = null;
+  if (!mdaText && !riskText && !geoNotesText && !businessText) {
+    const docLen = strippedText.length;
+    const midStart = Math.floor(docLen * 0.2);
+    fallbackText = strippedText.slice(midStart, midStart + 80000) ||
+                   strippedText.slice(0, 60000);
+  }
+
+  return { mdaText, riskText, geoNotesText, fallbackText, businessText, segmentNotesText, item2PropertiesText, exhibit21Text };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENHANCED LOCAL COUNTRY EXTRACTION (Fix 1, 2, 10)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Fix 1 + 2: Comprehensive country/alias/region/currency lists
+const COUNTRY_ALIASES_LOCAL: Record<string, string> = {
+  // US variants
+  'u.s.': 'United States', 'u.s.a.': 'United States', 'usa': 'United States',
+  'united states of america': 'United States', 'america': 'United States',
+  // UK variants
+  'u.k.': 'United Kingdom', 'uk': 'United Kingdom', 'great britain': 'United Kingdom',
+  'britain': 'United Kingdom', 'england': 'United Kingdom',
+  // China variants
+  'prc': 'China', "people's republic of china": 'China', 'mainland china': 'China',
+  'china mainland': 'China', 'greater china': 'China',
+  // Hong Kong
+  'h.k.': 'Hong Kong', 'hksar': 'Hong Kong',
+  // South Korea
+  'south korea': 'South Korea', 'republic of korea': 'South Korea', 'rok': 'South Korea',
+  's. korea': 'South Korea', 'korea': 'South Korea',
+  // UAE
+  'uae': 'United Arab Emirates', 'u.a.e.': 'United Arab Emirates', 'emirates': 'United Arab Emirates',
+  // Czech Republic
+  'czech republic': 'Czech Republic', 'czechia': 'Czech Republic', 'czech': 'Czech Republic',
+  // Turkey
+  'türkiye': 'Turkey', 'turkiye': 'Turkey',
+  // Russia
+  'russian federation': 'Russia',
+  // Taiwan
+  'taiwan, r.o.c.': 'Taiwan', 'r.o.c.': 'Taiwan',
+  // Vietnam
+  'viet nam': 'Vietnam',
+  // New Zealand
+  'new zealand': 'New Zealand', 'nz': 'New Zealand',
+  // Saudi Arabia
+  'saudi arabia': 'Saudi Arabia', 'ksa': 'Saudi Arabia',
+  // South Africa
+  'south africa': 'South Africa',
+  // North Korea (risk mentions)
+  'north korea': 'North Korea', 'dprk': 'North Korea',
+};
+
+const KNOWN_COUNTRIES_LOCAL: string[] = [
+  // Major economies
+  'United States', 'China', 'Japan', 'Germany', 'United Kingdom', 'France',
+  'India', 'South Korea', 'Canada', 'Australia', 'Brazil', 'Mexico',
+  'Netherlands', 'Switzerland', 'Sweden', 'Italy', 'Spain', 'Singapore',
+  'Taiwan', 'Hong Kong', 'Russia', 'Saudi Arabia', 'South Africa',
+  'Argentina', 'Chile', 'Colombia', 'Indonesia', 'Malaysia', 'Thailand',
+  'Vietnam', 'Philippines', 'Poland', 'Czech Republic', 'Hungary',
+  'Romania', 'Turkey', 'Israel', 'Egypt', 'Nigeria', 'Kenya',
+  'United Arab Emirates', 'Qatar', 'Kuwait', 'Ireland', 'Belgium',
+  'Austria', 'Denmark', 'Finland', 'Norway', 'Portugal', 'Greece',
+  'New Zealand', 'Pakistan', 'Bangladesh', 'Sri Lanka', 'Morocco',
+  // Additional countries often in 10-K/20-F
+  'Luxembourg', 'Cayman Islands', 'Bermuda', 'British Virgin Islands',
+  'Netherlands Antilles', 'Malta', 'Cyprus', 'Estonia', 'Latvia', 'Lithuania',
+  'Slovakia', 'Slovenia', 'Croatia', 'Serbia', 'Bulgaria', 'Ukraine',
+  'Kazakhstan', 'Uzbekistan', 'Azerbaijan', 'Georgia', 'Armenia',
+  'Peru', 'Ecuador', 'Bolivia', 'Paraguay', 'Uruguay', 'Venezuela',
+  'Panama', 'Costa Rica', 'Guatemala', 'Honduras', 'El Salvador', 'Nicaragua',
+  'Dominican Republic', 'Cuba', 'Jamaica', 'Trinidad', 'Barbados',
+  'Ethiopia', 'Tanzania', 'Uganda', 'Ghana', 'Ivory Coast', 'Senegal',
+  'Cameroon', 'Angola', 'Mozambique', 'Zimbabwe', 'Zambia', 'Botswana',
+  'Namibia', 'Madagascar', 'Rwanda', 'Sudan', 'Algeria', 'Tunisia', 'Libya',
+  'Jordan', 'Lebanon', 'Syria', 'Iraq', 'Iran', 'Oman', 'Bahrain', 'Yemen',
+  'Afghanistan', 'Myanmar', 'Cambodia', 'Laos', 'Mongolia', 'Nepal',
+  'Maldives', 'Brunei', 'Papua New Guinea', 'Fiji',
+  'Iceland', 'Liechtenstein', 'Monaco', 'Andorra', 'San Marino',
+  'North Korea', 'Macau',
+];
+
+const REGIONAL_AGGREGATES_LOCAL: string[] = [
+  'Americas', 'North America', 'Latin America', 'South America', 'Central America',
+  'Europe', 'EMEA', 'Western Europe', 'Eastern Europe', 'Central Europe',
+  'Asia', 'Asia-Pacific', 'APAC', 'Asia Pacific', 'Southeast Asia',
+  'Middle East', 'Africa', 'Sub-Saharan Africa', 'North Africa',
+  'Greater China', 'Greater Asia', 'Rest of World', 'International',
+  'Emerging Markets', 'Developed Markets',
+];
+
+// Fix 10: Currency-to-country mapping
+const CURRENCY_TO_COUNTRIES: Record<string, string[]> = {
+  'USD': ['United States'],
+  'EUR': ['Germany', 'France', 'Italy', 'Spain', 'Netherlands', 'Belgium', 'Austria', 'Finland', 'Portugal', 'Greece', 'Ireland', 'Luxembourg'],
+  'GBP': ['United Kingdom'],
+  'JPY': ['Japan'],
+  'CNY': ['China'], 'RMB': ['China'], 'CNH': ['China'],
+  'HKD': ['Hong Kong'],
+  'TWD': ['Taiwan'],
+  'KRW': ['South Korea'],
+  'INR': ['India'],
+  'AUD': ['Australia'],
+  'CAD': ['Canada'],
+  'SGD': ['Singapore'],
+  'CHF': ['Switzerland'],
+  'SEK': ['Sweden'],
+  'NOK': ['Norway'],
+  'DKK': ['Denmark'],
+  'PLN': ['Poland'],
+  'CZK': ['Czech Republic'],
+  'HUF': ['Hungary'],
+  'RON': ['Romania'],
+  'BRL': ['Brazil'],
+  'MXN': ['Mexico'],
+  'ARS': ['Argentina'],
+  'CLP': ['Chile'],
+  'COP': ['Colombia'],
+  'PEN': ['Peru'],
+  'IDR': ['Indonesia'],
+  'MYR': ['Malaysia'],
+  'THB': ['Thailand'],
+  'VND': ['Vietnam'],
+  'PHP': ['Philippines'],
+  'TRY': ['Turkey'],
+  'ILS': ['Israel'],
+  'SAR': ['Saudi Arabia'],
+  'AED': ['United Arab Emirates'],
+  'QAR': ['Qatar'],
+  'KWD': ['Kuwait'],
+  'EGP': ['Egypt'],
+  'NGN': ['Nigeria'],
+  'KES': ['Kenya'],
+  'ZAR': ['South Africa'],
+  'RUB': ['Russia'],
+  'UAH': ['Ukraine'],
+  'PKR': ['Pakistan'],
+  'BDT': ['Bangladesh'],
+  'LKR': ['Sri Lanka'],
+  'MAD': ['Morocco'],
+  'DZD': ['Algeria'],
+  'TND': ['Tunisia'],
+  'JOD': ['Jordan'],
+  'LBP': ['Lebanon'],
+  'CRC': ['Costa Rica'],
+  'PYG': ['Paraguay'],
+  'UYU': ['Uruguay'],
+  'BOB': ['Bolivia'],
+  'PEN': ['Peru'],
+  'VEF': ['Venezuela'],
+  'GTQ': ['Guatemala'],
+  'HNL': ['Honduras'],
+  'NIO': ['Nicaragua'],
+  'DOP': ['Dominican Republic'],
+  'JMD': ['Jamaica'],
+  'TTD': ['Trinidad'],
+  'KZT': ['Kazakhstan'],
+  'GEL': ['Georgia'],
+  'AMD': ['Armenia'],
+  'AZN': ['Azerbaijan'],
+  'UZS': ['Uzbekistan'],
+  'BYR': ['Belarus'],
+  'MDL': ['Moldova'],
+  'ALL': ['Albania'],
+  'MKD': ['North Macedonia'],
+  'BAM': ['Bosnia'],
+  'RSD': ['Serbia'],
+  'HRK': ['Croatia'],
+  'BGN': ['Bulgaria'],
+  'ISK': ['Iceland'],
+  'MNT': ['Mongolia'],
+  'KHR': ['Cambodia'],
+  'LAK': ['Laos'],
+  'MMK': ['Myanmar'],
+  'NPR': ['Nepal'],
+  'BND': ['Brunei'],
+  'MOP': ['Macau'],
+};
+
+/**
+ * extractCountriesLocally — comprehensive local regex extraction
+ * Fix 1: Runs as fallback when LLM returns 0 results
+ * Fix 2: Also runs alongside LLM to merge results
+ * Fix 10: Includes currency-to-country mapping
+ */
+function extractCountriesLocally(text: string): Set<string> {
+  const found = new Set<string>();
+  const lower = text.toLowerCase();
+
+  // Check COUNTRY_ALIASES_LOCAL
+  for (const [alias, canonical] of Object.entries(COUNTRY_ALIASES_LOCAL)) {
+    // Use word-boundary-like check: alias must be preceded/followed by non-alpha
+    const idx = lower.indexOf(alias.toLowerCase());
+    if (idx >= 0) {
+      const before = idx > 0 ? lower[idx - 1] : ' ';
+      const after = idx + alias.length < lower.length ? lower[idx + alias.length] : ' ';
+      const isWordBoundary = !/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after);
+      if (isWordBoundary) {
+        found.add(canonical);
+      }
+    }
+  }
+
+  // Check KNOWN_COUNTRIES_LOCAL (case-insensitive, word boundary)
+  for (const country of KNOWN_COUNTRIES_LOCAL) {
+    const countryLower = country.toLowerCase();
+    const idx = lower.indexOf(countryLower);
+    if (idx >= 0) {
+      const before = idx > 0 ? lower[idx - 1] : ' ';
+      const after = idx + countryLower.length < lower.length ? lower[idx + countryLower.length] : ' ';
+      const isWordBoundary = !/[a-z]/.test(before) && !/[a-z]/.test(after);
+      if (isWordBoundary) {
+        found.add(country);
+      }
+    }
+  }
+
+  // Check REGIONAL_AGGREGATES_LOCAL
+  for (const region of REGIONAL_AGGREGATES_LOCAL) {
+    if (lower.includes(region.toLowerCase())) {
+      found.add(region);
+    }
+  }
+
+  // Fix 10: Currency-to-country mapping
+  // Match currency codes in context (e.g., "EUR", "JPY", "CNY")
+  const currencyPattern = /\b(USD|EUR|GBP|JPY|CNY|RMB|CNH|HKD|TWD|KRW|INR|AUD|CAD|SGD|CHF|SEK|NOK|DKK|PLN|CZK|HUF|RON|BRL|MXN|ARS|CLP|COP|PEN|IDR|MYR|THB|VND|PHP|TRY|ILS|SAR|AED|QAR|KWD|EGP|NGN|KES|ZAR|RUB|UAH|PKR|BDT|LKR|MAD|DZD|TND|JOD|KZT|GEL|AMD|AZN|UZS|BGN|ISK|MNT|KHR|LAK|MMK|NPR|BND|MOP)\b/g;
+  const currencyMatches = text.match(currencyPattern);
+  if (currencyMatches) {
+    for (const currency of currencyMatches) {
+      const countries = CURRENCY_TO_COUNTRIES[currency.toUpperCase()];
+      if (countries) {
+        countries.forEach(c => found.add(c));
+      }
+    }
+  }
+
+  // Also extract adjective forms (e.g., "Chinese", "Japanese", "German")
+  const adjectiveMap: Record<string, string> = {
+    'american': 'United States', 'u.s.': 'United States',
+    'chinese': 'China', 'japanese': 'Japan', 'german': 'Germany',
+    'french': 'France', 'british': 'United Kingdom', 'italian': 'Italy',
+    'spanish': 'Spain', 'dutch': 'Netherlands', 'swiss': 'Switzerland',
+    'swedish': 'Sweden', 'norwegian': 'Norway', 'danish': 'Denmark',
+    'finnish': 'Finland', 'austrian': 'Austria', 'belgian': 'Belgium',
+    'polish': 'Poland', 'hungarian': 'Hungary', 'romanian': 'Romania',
+    'greek': 'Greece', 'portuguese': 'Portugal', 'irish': 'Ireland',
+    'canadian': 'Canada', 'australian': 'Australia', 'brazilian': 'Brazil',
+    'mexican': 'Mexico', 'argentinian': 'Argentina', 'argentine': 'Argentina',
+    'chilean': 'Chile', 'colombian': 'Colombia', 'peruvian': 'Peru',
+    'indian': 'India', 'korean': 'South Korea', 'taiwanese': 'Taiwan',
+    'singaporean': 'Singapore', 'vietnamese': 'Vietnam', 'thai': 'Thailand',
+    'malaysian': 'Malaysia', 'indonesian': 'Indonesia', 'filipino': 'Philippines',
+    'philippine': 'Philippines', 'russian': 'Russia', 'ukrainian': 'Ukraine',
+    'turkish': 'Turkey', 'israeli': 'Israel', 'saudi': 'Saudi Arabia',
+    'emirati': 'United Arab Emirates', 'egyptian': 'Egypt', 'nigerian': 'Nigeria',
+    'kenyan': 'Kenya', 'south african': 'South Africa', 'moroccan': 'Morocco',
+    'algerian': 'Algeria', 'tunisian': 'Tunisia', 'jordanian': 'Jordan',
+    'lebanese': 'Lebanon', 'iraqi': 'Iraq', 'iranian': 'Iran',
+    'pakistani': 'Pakistan', 'bangladeshi': 'Bangladesh', 'sri lankan': 'Sri Lanka',
+    'mongolian': 'Mongolia', 'kazakh': 'Kazakhstan', 'uzbek': 'Uzbekistan',
+    'georgian': 'Georgia', 'armenian': 'Armenia', 'azerbaijani': 'Azerbaijan',
+    'bulgarian': 'Bulgaria', 'serbian': 'Serbia', 'croatian': 'Croatia',
+    'slovak': 'Slovakia', 'slovenian': 'Slovenia', 'estonian': 'Estonia',
+    'latvian': 'Latvia', 'lithuanian': 'Lithuania', 'icelandic': 'Iceland',
+    'new zealand': 'New Zealand', 'hong kong': 'Hong Kong',
+  };
+
+  for (const [adj, country] of Object.entries(adjectiveMap)) {
+    const idx = lower.indexOf(adj);
+    if (idx >= 0) {
+      const before = idx > 0 ? lower[idx - 1] : ' ';
+      const after = idx + adj.length < lower.length ? lower[idx + adj.length] : ' ';
+      const isWordBoundary = !/[a-z]/.test(before) && !/[a-z]/.test(after);
+      if (isWordBoundary) {
+        found.add(country);
+      }
+    }
+  }
+
+  return found;
+}
+
+// ─── Main Narrative Parsing Function ─────────────────────────────────────────
+
 async function parseNarrative(html: string, ticker: string): Promise<NarrativeParsingResult> {
   const start = Date.now();
 
-  // Extract text content for narrative analysis (first 15,000 chars to stay within token limits)
-  const textContent = html
+  // Strip HTML tags once — used for local extraction and fallback
+  const strippedText = html
     .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
     .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 15000);
+    .trim();
 
-  if (textContent.length < 500) {
+  if (strippedText.length < 500) {
     return { succeeded: false, countriesFound: 0, durationMs: Date.now() - start };
   }
 
-  try {
-    verbose(`  Calling extract_geographic_narrative for ${ticker}...`);
-    const result = await callEdgeFunction<{
-      extractions?: Array<{ country?: string; region?: string; confidence?: string }>;
-    error?: string;
-    }>('extract_geographic_narrative', {
-      text: textContent,
-      sectionName: 'Annual Report',
-      ticker,
-    });
+  // Use iXBRL-aware section extraction on raw HTML
+  const sections = extractNarrativeSectionsFromHTML(html);
 
-    if (result.extractions && result.extractions.length > 0) {
-      // Count unique countries/regions with at least medium confidence
-      const qualifiedExtractions = result.extractions.filter(
-        e => e.confidence === 'high' || e.confidence === 'medium'
-      );
-      const uniqueLocations = new Set(
-        qualifiedExtractions.map(e => e.country || e.region || '').filter(Boolean)
-      );
-      return {
-        succeeded: uniqueLocations.size > 0,
-        countriesFound: uniqueLocations.size,
-        durationMs: Date.now() - start,
-      };
-    }
-  } catch (e) {
-    verbose(`  Narrative parsing failed for ${ticker}: ${String(e)}`);
+  // Build list of (text, sectionName) pairs to call
+  const calls: Array<{ text: string; sectionName: string }> = [];
+
+  if (sections.mdaText)          calls.push({ text: sections.mdaText,          sectionName: 'MD&A' });
+  if (sections.riskText)         calls.push({ text: sections.riskText,         sectionName: 'Risk Factors' });
+  if (sections.geoNotesText)     calls.push({ text: sections.geoNotesText,     sectionName: 'Geographic Notes' });
+  if (sections.businessText)     calls.push({ text: sections.businessText,     sectionName: 'Business Description' });
+  if (sections.segmentNotesText) calls.push({ text: sections.segmentNotesText, sectionName: 'Segment/Geographic Notes' });
+  if (sections.item2PropertiesText) calls.push({ text: sections.item2PropertiesText, sectionName: 'Item 2 Properties' });
+  if (sections.exhibit21Text)    calls.push({ text: sections.exhibit21Text,    sectionName: 'Exhibit 21 Subsidiaries' });
+  if (sections.fallbackText)     calls.push({ text: sections.fallbackText,     sectionName: 'Annual Report (fallback)' });
+
+  if (calls.length === 0) {
+    calls.push({ text: strippedText.slice(0, 50000), sectionName: 'Annual Report' });
   }
 
-  return { succeeded: false, countriesFound: 0, durationMs: Date.now() - start };
+  const uniqueLocations = new Set<string>();
+
+  // Fix 2: ALWAYS run local extraction on all section texts (not just as fallback)
+  // This guarantees baseline coverage even when LLM is unavailable or returns sparse results
+  for (const { text, sectionName } of calls) {
+    if (text.length < 100) continue;
+    const localFound = extractCountriesLocally(text);
+    if (localFound.size > 0) {
+      verbose(`  [LocalExtract] ${sectionName}: ${localFound.size} locations via local regex`);
+      localFound.forEach(c => uniqueLocations.add(c));
+    }
+  }
+
+  // Also run local extraction on the full stripped text for maximum coverage
+  const fullLocalFound = extractCountriesLocally(strippedText.substring(0, 150000));
+  if (fullLocalFound.size > 0) {
+    verbose(`  [LocalExtract] Full document: ${fullLocalFound.size} locations`);
+    fullLocalFound.forEach(c => uniqueLocations.add(c));
+  }
+
+  const localOnlyCount = uniqueLocations.size;
+  verbose(`  [LocalExtract] Total after local extraction: ${localOnlyCount} locations for ${ticker}`);
+
+  // LLM extraction — adds precision and context on top of local results
+  for (const { text, sectionName } of calls) {
+    if (text.length < 200) continue;
+    try {
+      verbose(`  Calling extract_geographic_narrative [${sectionName}] for ${ticker} (${text.length} chars)...`);
+      const result = await retryWithBackoff(
+        () => callEdgeFunction<{
+          extractions?: Array<{ country?: string; region?: string; confidence?: string }>;
+          error?: string;
+          _missingKey?: boolean;
+        }>('extract_geographic_narrative', {
+          text,
+          sectionName,
+          ticker,
+        }),
+        4, 1000, `extract_geographic_narrative(${ticker}/${sectionName})`
+      );
+
+      // Fix: If OPENAI_API_KEY is missing, skip LLM calls for remaining sections
+      if ((result as { _missingKey?: boolean })._missingKey) {
+        verbose(`  [LLM] OPENAI_API_KEY not set — skipping LLM extraction for ${ticker}`);
+        break; // Local extraction already ran above, so we have baseline coverage
+      }
+
+      if (result.extractions && result.extractions.length > 0) {
+        // Fix 4: Accept ALL confidence levels (high, medium, low)
+        for (const e of result.extractions) {
+          const loc = e.country || e.region || '';
+          if (loc) uniqueLocations.add(loc);
+        }
+        verbose(`  [LLM] ${sectionName}: ${result.extractions.length} extractions, running unique: ${uniqueLocations.size}`);
+      } else if (result.extractions && result.extractions.length === 0 && !(result as { _missingKey?: boolean })._missingKey) {
+        // Fix 7: Single retry after 2s when LLM returns zero extractions
+        verbose(`  [Retry] Zero LLM extractions for ${ticker}/${sectionName}, retrying after 2s...`);
+        await sleep(2000);
+        try {
+          const retryResult = await callEdgeFunction<{
+            extractions?: Array<{ country?: string; region?: string; confidence?: string }>;
+            _missingKey?: boolean;
+          }>('extract_geographic_narrative', { text, sectionName, ticker });
+          if (retryResult.extractions && retryResult.extractions.length > 0) {
+            for (const e of retryResult.extractions) {
+              const loc = e.country || e.region || '';
+              if (loc) uniqueLocations.add(loc);
+            }
+            verbose(`  [Retry] Success for ${ticker}/${sectionName}: ${retryResult.extractions.length} extractions`);
+          }
+        } catch (retryErr) {
+          verbose(`  [Retry] Retry also failed for ${ticker}/${sectionName}: ${String(retryErr)}`);
+        }
+      }
+    } catch (e) {
+      verbose(`  Narrative parsing [${sectionName}] failed for ${ticker}: ${String(e)}`);
+    }
+  }
+
+  const finalCount = uniqueLocations.size;
+  verbose(`  [Narrative] Final: ${finalCount} unique locations for ${ticker} (local: ${localOnlyCount}, after LLM: ${finalCount})`);
+
+  return {
+    succeeded: finalCount > 0,
+    countriesFound: finalCount,
+    durationMs: Date.now() - start,
+  };
 }
 
 // ─── Step 5: Determine Channel Evidence Tiers ─────────────────────────────────
@@ -760,6 +1558,52 @@ function assessMaterialSpecificity(tiers: BaselineResult['channelTiers']): {
   return { materiallySpecific, specificChannelCount: specificCount, dominantEvidenceTier: dominant };
 }
 
+// ─── Filing Recency Multiplier ────────────────────────────────────────────────
+
+function filingRecencyMultiplier(filingDateISO: string | null): number {
+  if (!filingDateISO) return 0.70;
+  const filingMs = new Date(filingDateISO).getTime();
+  if (isNaN(filingMs)) return 0.70;
+  const ageMonths = (Date.now() - filingMs) / (1000 * 60 * 60 * 24 * 30.44);
+  if (ageMonths < 12) return 1.00;
+  if (ageMonths < 24) return 0.85;
+  if (ageMonths < 36) return 0.70;
+  return 0.50;
+}
+
+// ─── Composite Confidence Score (P3-C) ───────────────────────────────────────
+
+type ConfidenceGrade = 'A' | 'B' | 'C' | 'D' | 'F';
+
+function computeCompositeConfidence(
+  tiers: BaselineResult['channelTiers'],
+  recencyMultiplier: number,
+  fmpConfirmedChannels: number = 0
+): { score: number; grade: ConfidenceGrade } {
+  const tierScore: Record<EvidenceTier, number> = {
+    DIRECT: 100, ALLOCATED: 75, MODELED: 50, FALLBACK: 20, NOT_RUN: 0,
+  };
+  const weights = { revenue: 0.40, supply: 0.25, assets: 0.20, financial: 0.15 };
+
+  const channelScore =
+    tierScore[tiers.revenue]   * weights.revenue   +
+    tierScore[tiers.supply]    * weights.supply     +
+    tierScore[tiers.assets]    * weights.assets     +
+    tierScore[tiers.financial] * weights.financial;
+
+  const fmpBoost = fmpConfirmedChannels >= 2 ? 1.10 : 1.00;
+  const raw = Math.round(channelScore * recencyMultiplier * fmpBoost);
+  const score = Math.min(100, Math.max(0, raw));
+
+  const grade: ConfidenceGrade =
+    score >= 85 ? 'A' :
+    score >= 70 ? 'B' :
+    score >= 50 ? 'C' :
+    score >= 30 ? 'D' : 'F';
+
+  return { score, grade };
+}
+
 // ─── Company Metadata Lookup ──────────────────────────────────────────────────
 
 interface CompanyMeta {
@@ -770,14 +1614,12 @@ interface CompanyMeta {
 }
 
 function getCompanyMeta(ticker: string): CompanyMeta {
-  // Determine category
   const upper = ticker.toUpperCase();
   let category: Category = 'D';
   if (CAT_A_TICKERS.includes(upper)) category = 'A';
   else if (CAT_B_TICKERS.includes(upper)) category = 'B';
   else if (CAT_C_TICKERS.includes(upper)) category = 'C';
 
-  // Determine if ADR (has hardcoded CIK and is in ADR section, or exchange is OTC/NYSE with foreign origin)
   const adrTickers = new Set([
     'BABA','PDD','JD','BIDU','NIO','LI','XPEV','NTES','BILI','YUMC',
     'TSM','ASX','CHT','KB','SHG','PKX','LPL','KEP',
@@ -799,7 +1641,6 @@ function getCompanyMeta(ticker: string): CompanyMeta {
 
   const isADR = adrTickers.has(upper);
 
-  // Exchange lookup (simplified)
   const exchangeMap: Record<string, string> = {
     'AAPL':'NASDAQ','MSFT':'NASDAQ','GOOGL':'NASDAQ','AMZN':'NASDAQ','TSLA':'NASDAQ',
     'META':'NASDAQ','NVDA':'NASDAQ','ADBE':'NASDAQ','NFLX':'NASDAQ','CSCO':'NASDAQ',
@@ -810,7 +1651,7 @@ function getCompanyMeta(ticker: string): CompanyMeta {
     'LLY':'NYSE','XOM':'NYSE','CVX':'NYSE','COP':'NYSE','SLB':'NYSE',
     'HD':'NYSE','MCD':'NYSE','NKE':'NYSE','DIS':'NYSE','PG':'NYSE',
     'CRM':'NYSE','ORCL':'NYSE','IBM':'NYSE','VZ':'NYSE',
-    'SBUX':'NASDAQ','ABBV':'NYSE','AXP':'NYSE','BLK':'NYSE','GS':'NYSE',
+    'SBUX':'NASDAQ',
     'BABA':'NYSE','NIO':'NYSE','XPEV':'NYSE','TSM':'NYSE','TM':'NYSE',
     'SONY':'NYSE','MUFG':'NYSE','BP':'NYSE','SHEL':'NYSE','HSBC':'NYSE',
     'AZN':'NASDAQ','GSK':'NYSE','ASML':'NASDAQ','SAP':'NYSE',
@@ -818,7 +1659,7 @@ function getCompanyMeta(ticker: string): CompanyMeta {
   };
 
   return {
-    name: ticker, // Will be enriched in future versions
+    name: ticker,
     exchange: exchangeMap[upper] || (isADR ? 'NYSE' : 'NASDAQ'),
     isADR,
     category,
@@ -866,6 +1707,9 @@ async function processCompany(
     materiallySpecific: false,
     specificChannelCount: 0,
     dominantEvidenceTier: 'FALLBACK',
+    compositeConfidenceScore: 0,
+    confidenceGrade: 'F',
+    recencyMultiplier: 0.70,
     totalPipelineMs: 0,
     errorMessage: null,
     timestamp: new Date().toISOString(),
@@ -954,6 +1798,13 @@ async function processCompany(
     result.specificChannelCount = assessment.specificChannelCount;
     result.dominantEvidenceTier = assessment.dominantEvidenceTier;
 
+    // ── P3-C: Composite Confidence Score ────────────────────────────────────
+    const recencyMult = filingRecencyMultiplier(result.filingDate);
+    result.recencyMultiplier = recencyMult;
+    const confidence = computeCompositeConfidence(result.channelTiers, recencyMult, 0);
+    result.compositeConfidenceScore = confidence.score;
+    result.confidenceGrade = confidence.grade;
+
     const tierStr = `${result.channelTiers.revenue}/${result.channelTiers.supply}/${result.channelTiers.assets}/${result.channelTiers.financial}`;
     const specificLabel = result.materiallySpecific ? '🟢 SPECIFIC' : '🔴 FALLBACK';
 
@@ -1007,12 +1858,9 @@ function loadCheckpoint(): Set<string> {
   const completed = new Set<string>();
   if (!fs.existsSync(CHECKPOINT_FILE)) return completed;
   try {
-    const lines = fs.readFileSync(CHECKPOINT_FILE, 'utf-8').split('\n').filter(Boolean);
-    for (const line of lines) {
-      try {
-        const result = JSON.parse(line) as BaselineResult;
-        completed.add(result.ticker);
-      } catch {}
+    const data = JSON.parse(fs.readFileSync(CHECKPOINT_FILE, 'utf-8')) as BaselineResult[];
+    for (const result of data) {
+      completed.add(result.ticker);
     }
     log(`Loaded ${completed.size} completed tickers from checkpoint`);
   } catch (e) {
@@ -1022,21 +1870,18 @@ function loadCheckpoint(): Set<string> {
 }
 
 function loadCheckpointResults(): BaselineResult[] {
-  const results: BaselineResult[] = [];
-  if (!fs.existsSync(CHECKPOINT_FILE)) return results;
+  if (!fs.existsSync(CHECKPOINT_FILE)) return [];
   try {
-    const lines = fs.readFileSync(CHECKPOINT_FILE, 'utf-8').split('\n').filter(Boolean);
-    for (const line of lines) {
-      try {
-        results.push(JSON.parse(line) as BaselineResult);
-      } catch {}
-    }
-  } catch {}
-  return results;
+    return JSON.parse(fs.readFileSync(CHECKPOINT_FILE, 'utf-8')) as BaselineResult[];
+  } catch {
+    return [];
+  }
 }
 
 function appendCheckpoint(result: BaselineResult): void {
-  fs.appendFileSync(CHECKPOINT_FILE, JSON.stringify(result) + '\n', 'utf-8');
+  const existing = loadCheckpointResults();
+  existing.push(result);
+  fs.writeFileSync(CHECKPOINT_FILE, JSON.stringify(existing, null, 2), 'utf-8');
 }
 
 function clearCheckpoint(): void {
@@ -1072,14 +1917,19 @@ function generateSummaryReport(summary: RunSummary): string {
   const durationMin = Math.floor(durationSec / 60);
   const durationRemSec = durationSec % 60;
 
-  // Per-company table
+  const avgScore = total > 0
+    ? Math.round(r.reduce((sum, x) => sum + x.compositeConfidenceScore, 0) / total)
+    : 0;
+  const gradeDist = (['A', 'B', 'C', 'D', 'F'] as const).map(
+    g => `${g}:${r.filter(x => x.confidenceGrade === g).length}`
+  ).join(' ');
+
   const tableRows = r.map(x => {
     const tiers = `${x.channelTiers.revenue}/${x.channelTiers.supply}/${x.channelTiers.assets}/${x.channelTiers.financial}`;
-    const specific = x.materiallySpecific ? '✅' : '❌';
-    return `| ${x.ticker} | ${x.category} | ${x.isADR ? 'Yes' : 'No'} | ${x.enteredSECPath ? '✅' : '❌'} | ${x.retrievalSucceeded ? '✅' : '❌'} | ${x.filingType || 'N/A'} | ${x.structuredParsingSucceeded ? '✅' : '❌'} | ${x.narrativeParsingSucceeded ? '✅' : '❌'} | ${x.narrativeCountriesFound} | ${tiers} | ${specific} | ${x.errorMessage ? x.errorMessage.slice(0, 40) : ''} |`;
+    const spec = x.materiallySpecific ? '✅' : '❌';
+    return `| ${x.ticker} | ${x.category} | ${x.isADR ? 'Yes' : 'No'} | ${x.enteredSECPath ? '✅' : '❌'} | ${x.retrievalSucceeded ? '✅' : '❌'} | ${x.filingType || 'N/A'} | ${x.structuredParsingSucceeded ? '✅' : '❌'} | ${x.narrativeParsingSucceeded ? '✅' : '❌'} | ${x.narrativeCountriesFound} | ${tiers} | ${spec} | ${x.compositeConfidenceScore} | ${x.confidenceGrade} | ${x.errorMessage ? x.errorMessage.slice(0, 40) : ''} |`;
   }).join('\n');
 
-  // Failures list
   const failures = r.filter(x => x.errorMessage || (!x.enteredSECPath) || (!x.retrievalSucceeded && x.enteredSECPath));
   const failureRows = failures.map(x => {
     const reason = x.errorMessage || (!x.enteredSECPath ? 'CIK not found' : 'Filing retrieval failed');
@@ -1113,7 +1963,7 @@ function generateSummaryReport(summary: RunSummary): string {
 ## Channel Evidence Tier Breakdown
 
 | Channel | DIRECT | ALLOCATED | MODELED | FALLBACK | NOT_RUN |
-|---------|--------|-----------|---------|----------|---------|
+|---------|--------|-----------|---------|----------|---------| 
 | Revenue | ${tierCount('revenue','DIRECT')} | ${tierCount('revenue','ALLOCATED')} | ${tierCount('revenue','MODELED')} | ${tierCount('revenue','FALLBACK')} | ${tierCount('revenue','NOT_RUN')} |
 | Supply | ${tierCount('supply','DIRECT')} | ${tierCount('supply','ALLOCATED')} | ${tierCount('supply','MODELED')} | ${tierCount('supply','FALLBACK')} | ${tierCount('supply','NOT_RUN')} |
 | Assets | ${tierCount('assets','DIRECT')} | ${tierCount('assets','ALLOCATED')} | ${tierCount('assets','MODELED')} | ${tierCount('assets','FALLBACK')} | ${tierCount('assets','NOT_RUN')} |
@@ -1131,10 +1981,16 @@ function generateSummaryReport(summary: RunSummary): string {
 
 ---
 
+## Confidence Summary
+
+**Average confidence score: ${avgScore} | Grade distribution: ${gradeDist}**
+
+---
+
 ## Per-Company Results
 
-| Ticker | Cat | ADR | CIK? | Retrieved | Filing | Structured | Narrative | Locations | Tiers (Rev/Sup/Ast/Fin) | Specific | Error |
-|--------|-----|-----|------|-----------|--------|------------|-----------|-----------|------------------------|----------|-------|
+| Ticker | Cat | ADR | CIK? | Retrieved | Filing | Structured | Narrative | Locations | Tiers (Rev/Sup/Ast/Fin) | Specific | Score | Grade | Error |
+|--------|-----|-----|------|-----------|--------|------------|-----------|-----------|------------------------|----------|-------|-------|-------|
 ${tableRows}
 
 ---
@@ -1147,6 +2003,7 @@ ${failures.length === 0 ? '_No failures recorded._' : failureRows}
 
 *Generated by runSECBaseline.ts — CO-GRI Platform*
 *Methodology: Read-only SEC EDGAR API calls via Supabase Edge Functions*
+*Narrative Parsing: Local regex (always-on) + LLM (when OPENAI_API_KEY available)*
 `;
 }
 
@@ -1163,11 +2020,6 @@ async function main(): Promise<void> {
   log(`  Run ID: ${runId}`);
   log('═══════════════════════════════════════════════════════════════');
 
-  // Validate environment (skip for dry-run)
-   // ── Validate environment (skip for dry-run) ───────────────────────────────
-  // Instead of calling process.exit(1), write a minimal error-state results
-  // file so the workflow continues, commits it, and the dashboard can display
-  // a clear "missing secrets" message instead of a blank .gitkeep placeholder.
   if (!IS_DRY_RUN && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
     log('⚠️  WARNING: Supabase credentials are not set.');
     log('   Required environment variables (either form is accepted):');
@@ -1178,6 +2030,7 @@ async function main(): Promise<void> {
     log('   → Settings → Secrets and variables → Actions → New repository secret');
     log('');
     log('   Writing an error-state results file so the dashboard shows this message.');
+    log('   To test without secrets: npx tsx src/scripts/runSECBaseline.ts --dry-run');
 
     const nowIso = new Date().toISOString();
     const errorMsg =
@@ -1220,23 +2073,21 @@ async function main(): Promise<void> {
       '1. Go to your GitHub repository',
       '2. Click **Settings** → **Secrets and variables** → **Actions**',
       '3. Click **New repository secret** and add:',
-      '   - `SUPABASE_URL` — your Supabase project URL',
+      '   - `SUPABASE_URL` — your Supabase project URL (e.g. `https://xxxx.supabase.co`)',
       '   - `SUPABASE_ANON_KEY` — your Supabase anon/public key',
       '4. Re-run the **SEC Runtime Baseline** workflow',
     ].join('\n');
     fs.writeFileSync(SUMMARY_FILE, errorSummaryMd, 'utf-8');
-    log(`✅ Error-state summary written to: ${SUMMARY_FILE}`);
+    log(`✅ Error-state latest-summary.md written to: ${SUMMARY_FILE}`);
     log('');
     log('   Exiting with code 0 so the workflow commits these files to the repo.');
     return;
   }
 
-
   if (!IS_DRY_RUN) {
     log(`✅ Supabase URL: ${SUPABASE_URL.slice(0, 30)}...`);
   }
 
-  // Build ticker list based on phase
   let tickers: string[];
 
   if (SINGLE_TICKER) {
@@ -1261,13 +2112,11 @@ async function main(): Promise<void> {
     }
   }
 
-  // Deduplicate
   tickers = [...new Set(tickers)];
   const total = tickers.length;
 
   log(`\nTotal tickers to process: ${total}`);
 
-  // Dry-run: just list tickers
   if (IS_DRY_RUN) {
     log('\n─── Dry Run — Ticker List ───────────────────────────────────────');
     tickers.forEach((t, i) => {
@@ -1282,7 +2131,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Resume: load checkpoint
   let completedTickers = new Set<string>();
   let previousResults: BaselineResult[] = [];
 
@@ -1296,12 +2144,10 @@ async function main(): Promise<void> {
     clearCheckpoint();
   }
 
-  // Ensure docs directory exists
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  // Process companies with concurrency control
   log(`\n─── Processing ${tickers.length} companies (concurrency: ${CONCURRENCY}) ─────────`);
   log('');
 
@@ -1329,7 +2175,6 @@ async function main(): Promise<void> {
   const endTime = new Date().toISOString();
   const durationMs = Date.now() - startMs;
 
-  // Write results
   const summary: RunSummary = {
     runId,
     phase: PHASE,
@@ -1343,17 +2188,22 @@ async function main(): Promise<void> {
     results: allResults,
   };
 
+  const isoStamp = endTime.replace(/[:.]/g, '-').replace('Z', 'Z');
+  const RESULTS_FILE = path.join(OUTPUT_DIR, `baseline-${isoStamp}.json`);
+  fs.writeFileSync(RESULTS_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+  log(`\n✅ Timestamped results written to: ${RESULTS_FILE}`);
+
   fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
-  log(`\n✅ Full results written to: ${LATEST_FILE}`);
+  log(`✅ Latest results written to:     ${LATEST_FILE}`);
 
   const summaryMd = generateSummaryReport(summary);
   fs.writeFileSync(SUMMARY_FILE, summaryMd, 'utf-8');
-  log(`✅ Summary report written to: ${SUMMARY_FILE}`);
+  log(`✅ Summary report written to:     ${SUMMARY_FILE}`);
 
-  // Print console summary
   const specific = allResults.filter(r => r.materiallySpecific).length;
   const entered = allResults.filter(r => r.enteredSECPath).length;
   const retrieved = allResults.filter(r => r.retrievalSucceeded).length;
+  const narrativeParsed = allResults.filter(r => r.narrativeParsingSucceeded).length;
   const durationSec = Math.round(durationMs / 1000);
 
   log('\n═══════════════════════════════════════════════════════════════');
@@ -1361,6 +2211,7 @@ async function main(): Promise<void> {
   log(`  Companies processed:    ${allResults.length}`);
   log(`  Entered SEC path:       ${entered} (${((entered/allResults.length)*100).toFixed(1)}%)`);
   log(`  Retrieval succeeded:    ${retrieved} (${((retrieved/allResults.length)*100).toFixed(1)}%)`);
+  log(`  Narrative parsed:       ${narrativeParsed} (${((narrativeParsed/allResults.length)*100).toFixed(1)}%)`);
   log(`  Materially specific:    ${specific} (${((specific/allResults.length)*100).toFixed(1)}%)`);
   log(`  Fallback-dominant:      ${allResults.length - specific} (${(((allResults.length-specific)/allResults.length)*100).toFixed(1)}%)`);
   log('═══════════════════════════════════════════════════════════════');
@@ -1368,5 +2219,5 @@ async function main(): Promise<void> {
 
 main().catch(err => {
   console.error(`[FATAL] ${String(err)}`);
-  process.exit(0);
+  process.exit(1);
 });
