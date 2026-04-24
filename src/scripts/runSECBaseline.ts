@@ -2009,6 +2009,58 @@ ${failures.length === 0 ? '_No failures recorded._' : failureRows}
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+// ─── Graceful Shutdown Support ───────────────────────────────────────────────
+// Set by SIGTERM/SIGINT handlers. When true, the task loop stops accepting
+// new work and flushes whatever partial results have been collected so far.
+let ABORT_REQUESTED = false;
+
+function flushPartialResults(
+  previousResults: BaselineResult[],
+  newResults: BaselineResult[],
+  phase: string,
+  runId: string,
+  startTime: string,
+  startMs: number
+): void {
+  const allResults = [...previousResults, ...newResults];
+  if (allResults.length === 0) {
+    warn('No results to flush - exiting without writing files');
+    return;
+  }
+  const endTime = new Date().toISOString();
+  const durationMs = Date.now() - startMs;
+  const summary = {
+    runId,
+    phase,
+    startTime,
+    endTime,
+    durationMs,
+    totalCompanies: allResults.length,
+    completedCompanies: allResults.length,
+    failedCompanies: allResults.filter((r: BaselineResult) => r.errorMessage !== null).length,
+    skippedCompanies: allResults.filter((r: BaselineResult) => !r.enteredSECPath).length,
+    results: allResults,
+    _partial: true,
+    _partialReason: 'Run was interrupted by SIGTERM/SIGINT (time budget reached)',
+  };
+  try {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    const isoStamp = endTime.replace(/[:.]/g, '-').replace('Z', 'Z');
+    const partialFile = path.join(OUTPUT_DIR, `baseline-${isoStamp}.json`);
+    fs.writeFileSync(partialFile, JSON.stringify(summary, null, 2), 'utf-8');
+    fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+    const summaryMd = generateSummaryReport(summary as RunSummary);
+    fs.writeFileSync(SUMMARY_FILE, summaryMd, 'utf-8');
+    log(`\n⚠️  PARTIAL results flushed: ${allResults.length} companies`);
+    log(`   latest.json  → ${LATEST_FILE}`);
+    log(`   archive      → ${partialFile}`);
+    log(`   summary.md   → ${SUMMARY_FILE}`);
+    log('   Resume with: npx tsx src/scripts/runSECBaseline.ts --resume');
+  } catch (e) {
+    warn(`Failed to flush partial results: ${String(e)}`);
+  }
+}
+
 async function main(): Promise<void> {
   const runId = new Date().toISOString().replace(/[:.]/g, '-');
   const startTime = new Date().toISOString();
@@ -2155,10 +2207,31 @@ async function main(): Promise<void> {
   const newResults: BaselineResult[] = [];
   let processedCount = 0;
 
+  // Register SIGTERM / SIGINT handlers here so they close over newResults,
+  // previousResults, and the other locals needed to flush partial results.
+  // These replace any earlier handlers registered at module level.
+  const gracefulShutdown = (sig: string) => {
+    if (ABORT_REQUESTED) return; // already handling
+    ABORT_REQUESTED = true;
+    log(`\n⚠️  ${sig} received — stopping after in-flight tasks complete...`);
+    log('   Partial results will be flushed and the process will exit cleanly.');
+    // Give in-flight tasks up to 60 s to finish, then force-flush and exit.
+    setTimeout(() => {
+      log('   Force-flush timeout reached — writing whatever is available now.');
+      flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
+      process.exit(0);
+    }, 60_000).unref();
+  };
+  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.once('SIGINT',  () => gracefulShutdown('SIGINT'));
+
   const tasks = tickers.map((ticker, index) =>
     (async () => {
+      // Skip new work if abort was requested — in-flight tasks finish naturally
+      if (ABORT_REQUESTED) return;
       await semaphore.acquire();
       try {
+        if (ABORT_REQUESTED) return; // re-check after acquiring semaphore
         const result = await processCompany(ticker, index + previousResults.length, total + previousResults.length);
         newResults.push(result);
         appendCheckpoint(result);
@@ -2170,6 +2243,12 @@ async function main(): Promise<void> {
   );
 
   await Promise.all(tasks);
+
+  // If we were aborted, flush partial results and exit — skip the normal summary block
+  if (ABORT_REQUESTED) {
+    flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
+    process.exit(0);
+  }
 
   const allResults = [...previousResults, ...newResults];
   const endTime = new Date().toISOString();
