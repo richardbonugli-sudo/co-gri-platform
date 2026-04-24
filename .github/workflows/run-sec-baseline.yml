@@ -155,12 +155,27 @@ jobs:
           echo "Output directories ready"
           ls -la docs/baseline-results/
 
-      # -- Step 6: Run the SEC baseline script with graceful shutdown watchdog
+      # -- Step 6: Run the SEC baseline script with reliable timeout enforcement
+      #
+      # WHY setsid + timeout instead of a bash watchdog:
+      #   - "npx tsx" is a wrapper process. Sending SIGTERM to the npx PID does
+      #     NOT reliably propagate to the real Node.js worker child process.
+      #   - setsid puts the entire process tree (npx + tsx + node) into its
+      #     own process group. "timeout --kill-after" then sends SIGTERM to the
+      #     whole group, and SIGKILL 2 min later if anything is still alive.
+      #   - The Node.js script has a SIGTERM handler that flushes partial results
+      #     before exiting, so the 2-min SIGKILL window is just a safety net.
+      #
+      # Time budget breakdown (total hard limit = 150 min):
+      #   8520s (142 min) = script wall-clock budget  -> SIGTERM sent to process group
+      #   +120s (  2 min) = SIGKILL grace window       -> force-kill if still alive
+      #   +  8 min        = commit + upload artifacts  -> remaining runner time
       - name: Run SEC baseline
         id: baseline
-        # Continue to post-processing steps even if this step times out or fails
+        # continue-on-error so post-processing steps always run even on timeout
         continue-on-error: true
         run: |
+          # -- Build CLI flags ----------------------------------------------
           FLAGS=""
 
           CATEGORY="${{ github.event.inputs.category }}"
@@ -195,53 +210,55 @@ jobs:
           fi
 
           echo "Running: npx tsx src/scripts/runSECBaseline.ts $FLAGS"
-          echo "Time budget: ${SCRIPT_BUDGET_SECONDS}s (hard limit 150 min, 8 min reserved for graceful shutdown + commit)"
+          echo "Wall-clock budget: ${SCRIPT_BUDGET_SECONDS}s"
+          echo "  -> SIGTERM sent to entire process group at ${SCRIPT_BUDGET_SECONDS}s"
+          echo "  -> SIGKILL sent to entire process group at $((SCRIPT_BUDGET_SECONDS + 120))s"
+          echo "  -> Script SIGTERM handler flushes partial results before exit"
           echo ""
 
-          # Launch script in background
-          npx tsx src/scripts/runSECBaseline.ts $FLAGS &
-          SCRIPT_PID=$!
-          echo "Script PID: $SCRIPT_PID"
+          # setsid: run the entire npx+tsx+node tree in its own process group
+          # so timeout can kill every process in the group, not just the npx wrapper.
+          #
+          # timeout flags:
+          #   --signal=TERM       send SIGTERM first (triggers script flush handler)
+          #   --kill-after=120    send SIGKILL 120s later if still alive (safety net)
+          #   ${SCRIPT_BUDGET_SECONDS}  wall-clock budget in seconds
+          #
+          # Exit codes from timeout:
+          #   124 = timed out (SIGTERM sent, process exited within kill-after window)
+          #   137 = killed    (SIGKILL was needed after kill-after window)
+          #     0 = completed normally within budget
 
-          # Start watchdog in background
-          (
-            sleep ${SCRIPT_BUDGET_SECONDS}
-            if kill -0 $SCRIPT_PID 2>/dev/null; then
-              echo ""
-              echo "============================================================"
-              echo "TIME BUDGET REACHED - sending SIGTERM to script (PID $SCRIPT_PID)"
-              echo "Script has 8 minutes to flush partial results before hard kill"
-              echo "============================================================"
-              kill -TERM $SCRIPT_PID
-              # After 7 minutes, force-kill if still running (leaves 1 min for commit)
-              sleep 420
-              if kill -0 $SCRIPT_PID 2>/dev/null; then
-                echo "Script still running after 7 min grace period - sending SIGKILL"
-                kill -KILL $SCRIPT_PID 2>/dev/null || true
-              fi
-            fi
-          ) &
-          WATCHDOG_PID=$!
-
-          # Wait for the script to finish (naturally or via signal)
-          wait $SCRIPT_PID
+          set +e
+          setsid timeout \
+            --signal=TERM \
+            --kill-after=120 \
+            ${SCRIPT_BUDGET_SECONDS} \
+            npx tsx src/scripts/runSECBaseline.ts $FLAGS
           SCRIPT_EXIT=$?
+          set -e
 
-          # Kill the watchdog if script finished before budget
-          kill $WATCHDOG_PID 2>/dev/null || true
-          wait $WATCHDOG_PID 2>/dev/null || true
+          echo ""
+          echo "Script exit code: $SCRIPT_EXIT"
 
           if [ $SCRIPT_EXIT -eq 0 ]; then
-            echo "Script completed successfully (exit 0)"
+            echo "Script completed successfully within time budget"
             echo "script_status=completed" >> $GITHUB_OUTPUT
-          elif [ $SCRIPT_EXIT -eq 143 ] || [ $SCRIPT_EXIT -eq 130 ]; then
-            # 143 = SIGTERM, 130 = SIGINT
-            echo "Script was gracefully terminated by time-budget watchdog (exit $SCRIPT_EXIT)"
-            echo "Partial results should be available in docs/baseline-results/"
+          elif [ $SCRIPT_EXIT -eq 124 ] || [ $SCRIPT_EXIT -eq 143 ]; then
+            # 124 = timeout sent SIGTERM and process exited cleanly
+            # 143 = SIGTERM received directly
+            echo "Time budget reached - script was gracefully terminated (exit $SCRIPT_EXIT)"
+            echo "Partial results flushed by the script SIGTERM handler"
+            echo "script_status=partial" >> $GITHUB_OUTPUT
+            exit 0
+          elif [ $SCRIPT_EXIT -eq 137 ]; then
+            # 137 = SIGKILL was needed (script did not exit within kill-after window)
+            echo "WARNING: Script required SIGKILL (did not exit within 2 min grace period)"
+            echo "Checkpoint file may still contain partial results from completed companies"
             echo "script_status=partial" >> $GITHUB_OUTPUT
             exit 0
           else
-            echo "Script exited with code $SCRIPT_EXIT"
+            echo "Script exited with unexpected code $SCRIPT_EXIT"
             echo "script_status=failed" >> $GITHUB_OUTPUT
             exit $SCRIPT_EXIT
           fi
@@ -256,6 +273,7 @@ jobs:
       # -- Step 7: Check if results were written (runs even on timeout) ------
       - name: Check for changes
         id: check_changes
+        # Always run - captures partial results if script was cut short
         if: always()
         run: |
           mkdir -p docs/baseline-results
@@ -280,12 +298,14 @@ jobs:
             git diff --stat -- docs/baseline-results/ || true
           fi
 
+          # Report what files are present
           echo ""
           echo "Files in docs/baseline-results/:"
           ls -lah docs/baseline-results/ || echo "(directory empty or missing)"
 
       # -- Step 8: Copy results to public folder (for Vite static serving) ---
       - name: Copy results to public folder
+        # Always run so partial results are also served statically
         if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
         run: |
           mkdir -p public/docs/baseline-results
@@ -302,6 +322,7 @@ jobs:
 
       # -- Step 9: Commit and push results (always - captures partial results)
       - name: Commit and push results
+        # Always run so partial results from a timed-out run are committed
         if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
