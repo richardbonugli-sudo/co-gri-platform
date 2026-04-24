@@ -24,6 +24,13 @@
 #
 # Manual trigger only (no schedule - runs can take 15-60 min depending on category):
 #   GitHub UI - Actions - "SEC Runtime Baseline" - Run workflow
+#
+# Timeout / graceful shutdown:
+#   Hard limit is 150 min (2.5 hours). The script is wrapped with a time-budget
+#   watchdog that sends SIGTERM 8 minutes before the hard limit, giving the
+#   script time to flush checkpoint.json and partial results. The post-processing
+#   steps all run with `if: always()` so partial results are always committed
+#   and uploaded as artifacts even if the run was cut short.
 # -----------------------------------------------------------------------------
 
 name: SEC Runtime Baseline
@@ -60,27 +67,36 @@ jobs:
   run-sec-baseline:
     name: Run SEC Baseline
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 150 minutes = 2.5 hours hard limit
+    # The script watchdog sends SIGTERM 8 min before this limit so partial
+    # results are flushed and committed before GitHub kills the runner.
+    timeout-minutes: 150
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
+      # 150 min - 8 min = 142 min = 8520 seconds
+      SCRIPT_BUDGET_SECONDS: 8520
 
     permissions:
-      contents: write
+      contents: write  # Required to commit and push docs/baseline-results/
 
     steps:
+      # -- Step 1: Checkout repository ----------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 1
 
+      # -- Step 2: Setup Node.js -----------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
 
+      # -- Step 3: Install dependencies ---------------------------------------
       - name: Install dependencies
         run: |
           if [ -f package-lock.json ]; then
@@ -91,6 +107,7 @@ jobs:
         env:
           NODE_ENV: development
 
+      # -- Step 4: Validate required secrets ---------------------------------
       - name: Validate required secrets
         run: |
           MISSING=""
@@ -108,14 +125,14 @@ jobs:
           fi
           if [ -z "$OPENAI_API_KEY" ]; then
             echo "WARNING: OPENAI_API_KEY secret is not set."
-            echo "Narrative parsing will be skipped."
+            echo "Narrative parsing will be skipped. narrativeParsingSucceeded will be false for all companies."
             MISSING="$MISSING OPENAI_API_KEY"
           else
             echo "OK: OPENAI_API_KEY is available"
           fi
           if [ -n "$MISSING" ]; then
             echo "Missing secrets:$MISSING"
-            echo "The run will continue in degraded mode."
+            echo "The run will continue in degraded mode (no Supabase writes / no narrative parsing)."
           fi
           DRY_RUN_INPUT="${{ github.event.inputs.dry_run }}"
           if [ "$DRY_RUN_INPUT" != "true" ] && [ -z "$SUPABASE_URL" ] && [ -z "$SUPABASE_ANON_KEY" ]; then
@@ -127,6 +144,7 @@ jobs:
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
+      # -- Step 5: Ensure output directories exist ----------------------------
       - name: Ensure output directories exist
         run: |
           mkdir -p docs/baseline-results
@@ -137,10 +155,14 @@ jobs:
           echo "Output directories ready"
           ls -la docs/baseline-results/
 
+      # -- Step 6: Run the SEC baseline script with graceful shutdown watchdog
       - name: Run SEC baseline
         id: baseline
+        # Continue to post-processing steps even if this step times out or fails
+        continue-on-error: true
         run: |
           FLAGS=""
+
           CATEGORY="${{ github.event.inputs.category }}"
           case "$CATEGORY" in
             "A")
@@ -160,17 +182,69 @@ jobs:
               echo "Unknown category '$CATEGORY', defaulting to phase=1 (Cat A)"
               ;;
           esac
+
           TICKER="${{ github.event.inputs.ticker }}"
           if [ -n "$TICKER" ]; then
             FLAGS="$FLAGS --ticker=$TICKER"
             echo "Single ticker mode: $TICKER"
           fi
+
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             FLAGS="$FLAGS --dry-run"
-            echo "Running in DRY RUN mode"
+            echo "Running in DRY RUN mode - no API calls, no file writes"
           fi
-          echo "npx tsx src/scripts/runSECBaseline.ts $FLAGS"
-          npx tsx src/scripts/runSECBaseline.ts $FLAGS
+
+          echo "Running: npx tsx src/scripts/runSECBaseline.ts $FLAGS"
+          echo "Time budget: ${SCRIPT_BUDGET_SECONDS}s (hard limit 150 min, 8 min reserved for graceful shutdown + commit)"
+          echo ""
+
+          # Launch script in background
+          npx tsx src/scripts/runSECBaseline.ts $FLAGS &
+          SCRIPT_PID=$!
+          echo "Script PID: $SCRIPT_PID"
+
+          # Start watchdog in background
+          (
+            sleep ${SCRIPT_BUDGET_SECONDS}
+            if kill -0 $SCRIPT_PID 2>/dev/null; then
+              echo ""
+              echo "============================================================"
+              echo "TIME BUDGET REACHED - sending SIGTERM to script (PID $SCRIPT_PID)"
+              echo "Script has 8 minutes to flush partial results before hard kill"
+              echo "============================================================"
+              kill -TERM $SCRIPT_PID
+              # After 7 minutes, force-kill if still running (leaves 1 min for commit)
+              sleep 420
+              if kill -0 $SCRIPT_PID 2>/dev/null; then
+                echo "Script still running after 7 min grace period - sending SIGKILL"
+                kill -KILL $SCRIPT_PID 2>/dev/null || true
+              fi
+            fi
+          ) &
+          WATCHDOG_PID=$!
+
+          # Wait for the script to finish (naturally or via signal)
+          wait $SCRIPT_PID
+          SCRIPT_EXIT=$?
+
+          # Kill the watchdog if script finished before budget
+          kill $WATCHDOG_PID 2>/dev/null || true
+          wait $WATCHDOG_PID 2>/dev/null || true
+
+          if [ $SCRIPT_EXIT -eq 0 ]; then
+            echo "Script completed successfully (exit 0)"
+            echo "script_status=completed" >> $GITHUB_OUTPUT
+          elif [ $SCRIPT_EXIT -eq 143 ] || [ $SCRIPT_EXIT -eq 130 ]; then
+            # 143 = SIGTERM, 130 = SIGINT
+            echo "Script was gracefully terminated by time-budget watchdog (exit $SCRIPT_EXIT)"
+            echo "Partial results should be available in docs/baseline-results/"
+            echo "script_status=partial" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "Script exited with code $SCRIPT_EXIT"
+            echo "script_status=failed" >> $GITHUB_OUTPUT
+            exit $SCRIPT_EXIT
+          fi
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -179,11 +253,18 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           NODE_ENV: production
 
+      # -- Step 7: Check if results were written (runs even on timeout) ------
       - name: Check for changes
         id: check_changes
         if: always()
         run: |
           mkdir -p docs/baseline-results
+
+          SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
+          if [ "$SCRIPT_STATUS" = "partial" ]; then
+            echo "NOTE: Script was stopped by time-budget watchdog - checking for partial results"
+          fi
+
           if git diff --quiet -- docs/baseline-results/ 2>/dev/null; then
             UNTRACKED=$(git ls-files --others --exclude-standard docs/baseline-results/ | wc -l)
             if [ "$UNTRACKED" -gt "0" ]; then
@@ -199,30 +280,41 @@ jobs:
             git diff --stat -- docs/baseline-results/ || true
           fi
 
+          echo ""
+          echo "Files in docs/baseline-results/:"
+          ls -lah docs/baseline-results/ || echo "(directory empty or missing)"
+
+      # -- Step 8: Copy results to public folder (for Vite static serving) ---
       - name: Copy results to public folder
-        if: steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
         run: |
           mkdir -p public/docs/baseline-results
           if [ -f docs/baseline-results/latest.json ]; then
             cp docs/baseline-results/latest.json public/docs/baseline-results/latest.json
             echo "Copied latest.json to public/docs/baseline-results/"
+          else
+            echo "docs/baseline-results/latest.json not found - skipping copy"
           fi
           if [ -f docs/baseline-results/latest-summary.md ]; then
             cp docs/baseline-results/latest-summary.md public/docs/baseline-results/latest-summary.md
             echo "Copied latest-summary.md to public/docs/baseline-results/"
           fi
 
+      # -- Step 9: Commit and push results (always - captures partial results)
       - name: Commit and push results
-        if: steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
+
           git add docs/baseline-results/ || true
           git add public/docs/baseline-results/ || true
+
           if git diff --cached --quiet; then
             echo "Nothing to commit after staging"
             exit 0
           fi
+
           CHANGED_STAT=$(git diff --cached --stat docs/baseline-results/ | tail -1)
           CATEGORY="${{ github.event.inputs.category }}"
           TICKER="${{ github.event.inputs.ticker }}"
@@ -230,15 +322,35 @@ jobs:
           if [ -n "$TICKER" ]; then
             TICKER_NOTE=" (ticker: $TICKER)"
           fi
-          git commit -m "chore(data): sec-baseline results - category $CATEGORY$TICKER_NOTE [skip ci]
+
+          SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
+          STATUS_NOTE=""
+          if [ "$SCRIPT_STATUS" = "partial" ]; then
+            STATUS_NOTE=" [PARTIAL - time budget reached, resume with --resume flag]"
+          fi
+
+          git commit -m "chore(data): sec-baseline results - category $CATEGORY$TICKER_NOTE$STATUS_NOTE [skip ci]
 
           Automated SEC runtime baseline via GitHub Actions
           Date: $(date -u '+%Y-%m-%d %H:%M UTC')
           Category: $CATEGORY$TICKER_NOTE
-          ${CHANGED_STAT}"
-          git push origin HEAD
-          echo "Baseline results committed and pushed successfully"
+          Status: ${SCRIPT_STATUS:-completed}
+          ${CHANGED_STAT}
 
+          Outputs:
+          - docs/baseline-results/latest.json               (always overwritten)
+          - docs/baseline-results/latest-summary.md         (human-readable report)
+          - docs/baseline-results/baseline-*.json           (timestamped archive)
+          - docs/baseline-results/checkpoint.json           (resume support - use --resume to continue)
+          - public/docs/baseline-results/latest.json        (Vite static serving copy)
+
+          To resume a partial run locally:
+            npx tsx src/scripts/runSECBaseline.ts --resume --phase=<phase>"
+
+          git push origin HEAD
+          echo "Results committed and pushed successfully (status: ${SCRIPT_STATUS:-completed})"
+
+      # -- Step 10: Upload artifacts (always - captures partial results) ------
       - name: Upload baseline artifacts
         if: always() && github.event.inputs.dry_run != 'true'
         uses: actions/upload-artifact@v4
@@ -248,14 +360,26 @@ jobs:
             docs/baseline-results/latest.json
             docs/baseline-results/latest-summary.md
             docs/baseline-results/checkpoint.json
+            docs/baseline-results/baseline-*.json
           if-no-files-found: warn
           retention-days: 30
 
+      # -- Step 11: Job summary -----------------------------------------------
       - name: Job summary
         if: always()
         run: |
+          SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
+          CHANGES="${{ steps.check_changes.outputs.changed }}"
+
           echo "## SEC Runtime Baseline Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$SCRIPT_STATUS" = "partial" ]; then
+            echo "> **PARTIAL RUN** - Time budget (2.5 hours) was reached. Partial results have been saved and committed." >> $GITHUB_STEP_SUMMARY
+            echo "> To continue from where it left off, run locally with: \`npx tsx src/scripts/runSECBaseline.ts --resume\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Run date | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
@@ -263,8 +387,24 @@ jobs:
           echo "| Category | ${{ github.event.inputs.category }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Ticker override | ${{ github.event.inputs.ticker || '(none - full category)' }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Changes committed | ${{ steps.check_changes.outputs.changed || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Script status | ${SCRIPT_STATUS:-unknown} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Changes committed | ${CHANGES:-false} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Hard timeout | 150 min (2.5 hours) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Graceful shutdown buffer | 8 min before hard limit |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Output files" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/baseline-results/latest.json\` - full or partial results" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/baseline-results/latest-summary.md\` - human-readable report" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/baseline-results/baseline-[ISO].json\` - timestamped archive" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/baseline-results/checkpoint.json\` - resume checkpoint (use --resume to continue)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Notes" >> $GITHUB_STEP_SUMMARY
+          echo "- If status is \`partial\`: results up to the cutoff point are fully usable" >> $GITHUB_STEP_SUMMARY
+          echo "- Resume a partial run: \`npx tsx src/scripts/runSECBaseline.ts --resume\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`OPENAI_API_KEY\` is required for narrative parsing" >> $GITHUB_STEP_SUMMARY
+          echo "- Commits use \`[skip ci]\` to prevent workflow loops" >> $GITHUB_STEP_SUMMARY
 
+  # -- Failure notification job ----------------------------------------------
   notify-on-failure:
     name: Notify on failure
     runs-on: ubuntu-latest
@@ -281,9 +421,12 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Possible causes:**" >> $GITHUB_STEP_SUMMARY
           echo "- Missing secrets: SUPABASE_URL and/or SUPABASE_ANON_KEY not set" >> $GITHUB_STEP_SUMMARY
-          echo "- EDGAR rate limiting (HTTP 429)" >> $GITHUB_STEP_SUMMARY
+          echo "- EDGAR rate limiting (HTTP 429) - reduce concurrency and retry" >> $GITHUB_STEP_SUMMARY
           echo "- OPENAI_API_KEY secret missing or expired" >> $GITHUB_STEP_SUMMARY
           echo "- Network timeout fetching a large 10-K HTML document" >> $GITHUB_STEP_SUMMARY
           echo "- TypeScript compilation error in runSECBaseline.ts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Quick fix - test without secrets:**" >> $GITHUB_STEP_SUMMARY
+          echo "Re-run the workflow with dry_run=true to validate the setup without making any API calls." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Action required:** Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details." >> $GITHUB_STEP_SUMMARY
