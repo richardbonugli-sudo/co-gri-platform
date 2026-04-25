@@ -144,6 +144,26 @@ const SINGLE_TICKER: string | null = tickerArg ? tickerArg.split('=')[1].toUpper
 const concurrencyArg = args.find(a => a.startsWith('--concurrency='));
 const CONCURRENCY: number = concurrencyArg ? Math.min(10, Math.max(1, parseInt(concurrencyArg.split('=')[1], 10))) : 3;
 
+// ─── Internal Wall-Clock Budget ───────────────────────────────────────────────
+// Read from SCRIPT_BUDGET_MS env var (set by the workflow) or default to
+// 8100 seconds (135 min) — 15 min less than the 150-min hard limit.
+// This gives ~15 min for graceful flush + commit + artifact upload.
+// The budget is checked before each new company is started.
+const SCRIPT_BUDGET_MS: number = process.env.SCRIPT_BUDGET_MS
+  ? parseInt(process.env.SCRIPT_BUDGET_MS, 10)
+  : 8100 * 1000;
+
+// Wall-clock start time — set once at module load so it's available everywhere
+const WALL_CLOCK_START_MS: number = Date.now();
+
+function isBudgetExceeded(): boolean {
+  return Date.now() - WALL_CLOCK_START_MS >= SCRIPT_BUDGET_MS;
+}
+
+function remainingBudgetMs(): number {
+  return Math.max(0, SCRIPT_BUDGET_MS - (Date.now() - WALL_CLOCK_START_MS));
+}
+
 // ─── Environment ──────────────────────────────────────────────────────────────
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
@@ -1685,8 +1705,37 @@ async function parseNarrative(html: string, ticker: string): Promise<NarrativePa
 
   // LLM extraction — adds precision and context on top of local results
   for (const { text, sectionName } of calls) {
+      // Skip remaining LLM calls if the global budget is nearly exhausted
+      // (keep 5 min buffer for in-flight companies to finish and flush)
+      if (remainingBudgetMs() < 5 * 60 * 1000) {
+        verbose(`  [Budget] Skipping LLM for ${ticker}/${sectionName} — budget nearly exhausted`);
+        break;
+      }
     if (text.length < 200) continue;
     try {
+</to_replace>
+</Editor.edit_file_by_replace>
+
+Now apply the workflow file changes:
+
+## FILE 2: Change 1 — Add `SCRIPT_BUDGET_MS` env var to the workflow
+
+<Editor.edit_file_by_replace>
+<file_name>
+/workspace/shadcn-ui/.github/workflows/run-sec-baseline.yml
+</file_name>
+<to_replace>
+      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
+      # 150 min - 8 min = 142 min = 8520 seconds
+      SCRIPT_BUDGET_SECONDS: 8520
+</to_replace>
+<new_content>
+      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
+      # 150 min - 8 min = 142 min = 8520 seconds
+      SCRIPT_BUDGET_SECONDS: 8520
+      # Pass budget in milliseconds to the Node.js script's internal watchdog
+      # 135 min = 8100s = 8100000ms (15 min less than hard limit for flush+commit)
+      SCRIPT_BUDGET_MS: 8100000
       verbose(`  Calling extract_geographic_narrative [${sectionName}] for ${ticker} (${text.length} chars)...`);
       const result = await retryWithBackoff(
         () => callEdgeFunction<{
@@ -2009,9 +2058,197 @@ function getCompanyMeta(ticker: string): CompanyMeta {
   };
 }
 
+// ─── Per-Company Timeout Wrapper ──────────────────────────────────────────────
+// Wraps processCompany in a Promise.race with a hard per-company deadline.
+// Default: 8 minutes per company (covers worst-case 4-retry EDGAR fetch +
+// 8-section LLM narrative with retries).
+const PER_COMPANY_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes
+
+async function processCompanyWithTimeout(
+  ticker: string,
+  index: number,
+  total: number
+): Promise<BaselineResult> {
+  const meta = getCompanyMeta(ticker);
+  const timeoutResult: BaselineResult = {
+    ticker,
+    companyName: meta.name,
+    exchange: meta.exchange,
+    category: meta.category,
+    isADR: meta.isADR,
+    enteredSECPath: false,
+    cikSource: 'not_found',
+    cik: null,
+    cikResolutionMs: 0,
+    retrievalSucceeded: false,
+    filingType: null,
+    filingDate: null,
+    htmlSizeBytes: null,
+    retrievalMs: 0,
+    retrievalError: null,
+    structuredParsingSucceeded: false,
+    tablesFound: 0,
+    revenueTableFound: false,
+    ppeTableFound: false,
+    debtTableFound: false,
+    exhibit21Found: false,
+    structuredParsingMs: 0,
+    narrativeParsingSucceeded: false,
+    narrativeCountriesFound: 0,
+    narrativeSupplyCountriesFound: 0,
+    narrativeRevenueCountriesFound: 0,
+    narrativeAssetsCountriesFound: 0,
+    narrativeExhibit21CountriesFound: 0,
+    structuredExhibit21CountriesFound: 0,
+    narrativeParsingMs: 0,
+    channelTiers: { revenue: 'FALLBACK', supply: 'FALLBACK', assets: 'FALLBACK', financial: 'FALLBACK' },
+    materiallySpecific: false,
+    specificChannelCount: 0,
+    dominantEvidenceTier: 'FALLBACK',
+    compositeConfidenceScore: 0,
+    confidenceGrade: 'F',
+    recencyMultiplier: 0.70,
+    totalPipelineMs: PER_COMPANY_TIMEOUT_MS,
+    errorMessage: `Per-company timeout exceeded (${PER_COMPANY_TIMEOUT_MS / 1000}s)`,
+    timestamp: new Date().toISOString(),
+  };
+
+  const timeoutPromise = new Promise<BaselineResult>((resolve) => {
+    setTimeout(() => {
+      warn(`[TIMEOUT] ${ticker} exceeded per-company limit of ${PER_COMPANY_TIMEOUT_MS / 1000}s — skipping`);
+      resolve(timeoutResult);
+    }, PER_COMPANY_TIMEOUT_MS);
+  });
+
+  return Promise.race([processCompany(ticker, index, total), timeoutPromise]);
+}
+
 // ─── Per-Company Pipeline ─────────────────────────────────────────────────────
 
 async function processCompany(
+</to_replace>
+</Editor.edit_file_by_replace>
+
+## FILE 1: Change 4 — Replace gracefulShutdown handler and task loop in `main()`
+
+<Editor.edit_file_by_replace>
+<file_name>
+/workspace/shadcn-ui/src/scripts/runSECBaseline.ts
+</file_name>
+<to_replace>
+  // Register SIGTERM / SIGINT handlers here so they close over newResults,
+  // previousResults, and the other locals needed to flush partial results.
+  // These replace any earlier handlers registered at module level.
+  const gracefulShutdown = (sig: string) => {
+    if (ABORT_REQUESTED) return; // already handling
+    ABORT_REQUESTED = true;
+    log(`\n⚠️  ${sig} received — stopping after in-flight tasks complete...`);
+    log('   Partial results will be flushed and the process will exit cleanly.');
+    // Give in-flight tasks up to 60 s to finish, then force-flush and exit.
+    setTimeout(() => {
+      log('   Force-flush timeout reached — writing whatever is available now.');
+      flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
+      process.exit(0);
+    }, 60_000).unref();
+  };
+  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.once('SIGINT',  () => gracefulShutdown('SIGINT'));
+
+  const tasks = tickers.map((ticker, index) =>
+    (async () => {
+      // Skip new work if abort was requested — in-flight tasks finish naturally
+      if (ABORT_REQUESTED) return;
+      await semaphore.acquire();
+      try {
+        if (ABORT_REQUESTED) return; // re-check after acquiring semaphore
+        const result = await processCompany(ticker, index + previousResults.length, total + previousResults.length);
+        newResults.push(result);
+        appendCheckpoint(result);
+        processedCount++;
+      } finally {
+        semaphore.release();
+      }
+    })()
+  );
+
+  await Promise.all(tasks);
+
+  // If we were aborted, flush partial results and exit — skip the normal summary block
+  if (ABORT_REQUESTED) {
+    flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
+    process.exit(0);
+  }
+</to_replace>
+<new_content>
+  // ── Graceful shutdown triggered by SIGTERM/SIGINT or internal budget ──────
+  const triggerGracefulShutdown = (reason: string) => {
+    if (ABORT_REQUESTED) return;
+    ABORT_REQUESTED = true;
+    log(`\n⚠️  ${reason} — draining in-flight tasks then flushing results...`);
+    log(`   Remaining budget: ${Math.round(remainingBudgetMs() / 1000)}s`);
+    // Reject all queued (not yet started) semaphore waiters immediately
+    semaphore.abortAll('Budget exceeded — aborting queued tasks');
+    // Force-flush after 30s regardless (don't use .unref() — we MUST flush)
+    setTimeout(() => {
+      log('   Force-flush timeout reached — writing whatever is available now.');
+      flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
+      process.exit(0);
+    }, 30_000);
+  };
+
+  process.once('SIGTERM', () => triggerGracefulShutdown('SIGTERM received'));
+  process.once('SIGINT',  () => triggerGracefulShutdown('SIGINT received'));
+
+  // Internal budget watchdog — polls every 30s and triggers shutdown when
+  // the wall-clock budget is exceeded. This is the primary shutdown mechanism
+  // and does NOT depend on external signals from `timeout` or `setsid`.
+  const budgetWatchdog = setInterval(() => {
+    if (isBudgetExceeded() && !ABORT_REQUESTED) {
+      clearInterval(budgetWatchdog);
+      triggerGracefulShutdown(`Internal budget exceeded (${Math.round(SCRIPT_BUDGET_MS / 60000)}min)`);
+    }
+  }, 30_000);
+  // Do NOT unref() — we need this interval to keep the process alive and fire
+
+  const tasks = tickers.map((ticker, index) =>
+    (async () => {
+      if (ABORT_REQUESTED) return;
+      // Check budget before even queuing
+      if (isBudgetExceeded()) {
+        triggerGracefulShutdown('Budget exceeded before task start');
+        return;
+      }
+      try {
+        await semaphore.acquire();
+      } catch {
+        // Semaphore was aborted (budget exceeded while waiting)
+        return;
+      }
+      try {
+        if (ABORT_REQUESTED) return;
+        const result = await processCompanyWithTimeout(
+          ticker,
+          index + previousResults.length,
+          total + previousResults.length
+        );
+        newResults.push(result);
+        appendCheckpoint(result);
+        processedCount++;
+      } finally {
+        semaphore.release();
+      }
+    })()
+  );
+
+  await Promise.all(tasks);
+
+  clearInterval(budgetWatchdog);
+
+  // If we were aborted, flush partial results and exit — skip the normal summary block
+  if (ABORT_REQUESTED) {
+    flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
+    process.exit(0);
+  }
   ticker: string,
   index: number,
   total: number
@@ -2181,7 +2418,7 @@ async function processCompany(
 
 class Semaphore {
   private permits: number;
-  private queue: Array<() => void> = [];
+  private queue: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
 
   constructor(permits: number) {
     this.permits = permits;
@@ -2192,7 +2429,9 @@ class Semaphore {
       this.permits--;
       return;
     }
-    return new Promise(resolve => this.queue.push(resolve));
+    return new Promise<void>((resolve, reject) => {
+      this.queue.push({ resolve, reject });
+    });
   }
 
   release(): void {
@@ -2200,8 +2439,15 @@ class Semaphore {
     const next = this.queue.shift();
     if (next) {
       this.permits--;
-      next();
+      next.resolve();
     }
+  }
+
+  /** Drain the waiting queue by rejecting all pending acquires. */
+  abortAll(reason: string): void {
+    const err = new Error(reason);
+    const waiting = this.queue.splice(0);
+    for (const { reject } of waiting) reject(err);
   }
 }
 
