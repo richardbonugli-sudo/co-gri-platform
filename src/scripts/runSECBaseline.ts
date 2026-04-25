@@ -523,6 +523,283 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// ─── EDGAR Direct Access Constants ───────────────────────────────────────────
+
+/** User-Agent required by SEC EDGAR fair-use policy */
+const EDGAR_USER_AGENT = 'CO-GRI-Platform/1.0 research@cogri.io';
+
+// ─── EDGAR Direct Helpers ─────────────────────────────────────────────────────
+
+/**
+ * fetchFromEDGARSubmissions — fetch the most recent 10-K or 20-F filing metadata
+ * directly from the SEC EDGAR submissions API (no Supabase required).
+ *
+ * @param cik - CIK string (with or without leading zeros)
+ * @returns { accessionNumber, filingDate, form } or null if not found
+ */
+async function fetchFromEDGARSubmissions(cik: string): Promise<{
+  accessionNumber: string;
+  filingDate: string;
+  form: string;
+} | null> {
+  const paddedCik = cik.replace(/^0+/, '').padStart(10, '0');
+  const url = `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
+
+  return new Promise((resolve) => {
+    const req = https.get(
+      url,
+      {
+        headers: {
+          'User-Agent': EDGAR_USER_AGENT,
+          'Accept': 'application/json',
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk: string) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            if (res.statusCode && res.statusCode >= 400) {
+              verbose(`  [EDGAR] submissions API returned HTTP ${res.statusCode} for CIK ${cik}`);
+              resolve(null);
+              return;
+            }
+            const json = JSON.parse(data) as {
+              filings?: {
+                recent?: {
+                  accessionNumber?: string[];
+                  filingDate?: string[];
+                  form?: string[];
+                };
+              };
+            };
+            const recent = json.filings?.recent;
+            if (!recent?.accessionNumber || !recent?.form || !recent?.filingDate) {
+              resolve(null);
+              return;
+            }
+            const targetForms = ['10-K', '20-F', '40-F'];
+            for (let i = 0; i < recent.form.length; i++) {
+              if (targetForms.includes(recent.form[i])) {
+                resolve({
+                  accessionNumber: recent.accessionNumber[i],
+                  filingDate: recent.filingDate[i],
+                  form: recent.form[i],
+                });
+                return;
+              }
+            }
+            resolve(null);
+          } catch (e) {
+            verbose(`  [EDGAR] JSON parse error for submissions CIK ${cik}: ${String(e)}`);
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on('error', (e) => {
+      verbose(`  [EDGAR] submissions request error for CIK ${cik}: ${String(e)}`);
+      resolve(null);
+    });
+    req.setTimeout(30000, () => {
+      req.destroy();
+      verbose(`  [EDGAR] submissions request timeout for CIK ${cik}`);
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * fetchFilingHTMLFromEDGAR — fetch the primary HTML document for a filing
+ * directly from SEC EDGAR Archives (no Supabase required).
+ *
+ * @param cik - CIK string (with or without leading zeros)
+ * @param accessionNumber - accession number with dashes (e.g. "0001234567-23-000001")
+ * @returns HTML string (up to 5MB) or null on failure
+ */
+async function fetchFilingHTMLFromEDGAR(cik: string, accessionNumber: string): Promise<string | null> {
+  const cikNum = parseInt(cik, 10);
+  const accNoDashes = accessionNumber.replace(/-/g, '');
+  const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accNoDashes}/${accessionNumber}-index.json`;
+
+  verbose(`  [EDGAR] Fetching filing index: ${indexUrl}`);
+
+  // Step 1: fetch the filing index to find the primary document
+  const primaryDoc = await new Promise<string | null>((resolve) => {
+    const req = https.get(
+      indexUrl,
+      { headers: { 'User-Agent': EDGAR_USER_AGENT, 'Accept': 'application/json' } },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk: string) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            if (res.statusCode && res.statusCode >= 400) {
+              verbose(`  [EDGAR] index returned HTTP ${res.statusCode}`);
+              resolve(null);
+              return;
+            }
+            const json = JSON.parse(data) as {
+              directory?: { item?: Array<{ name?: string; type?: string }> };
+            };
+            const items = json.directory?.item || [];
+            // Find primary HTML document (not the index itself)
+            const htmlItem = items.find(
+              (it) =>
+                it.name &&
+                (it.name.endsWith('.htm') || it.name.endsWith('.html')) &&
+                !it.name.toLowerCase().includes('index')
+            );
+            if (htmlItem?.name) {
+              resolve(htmlItem.name);
+            } else {
+              // Fallback: first .htm file
+              const anyHtm = items.find(
+                (it) => it.name && (it.name.endsWith('.htm') || it.name.endsWith('.html'))
+              );
+              resolve(anyHtm?.name || null);
+            }
+          } catch (e) {
+            verbose(`  [EDGAR] index JSON parse error: ${String(e)}`);
+            resolve(null);
+          }
+        });
+      }
+    );
+    req.on('error', (e) => { verbose(`  [EDGAR] index request error: ${String(e)}`); resolve(null); });
+    req.setTimeout(30000, () => { req.destroy(); resolve(null); });
+  });
+
+  if (!primaryDoc) {
+    verbose(`  [EDGAR] No primary HTML document found in filing index`);
+    return null;
+  }
+
+  // Step 2: fetch the primary HTML document (limit to 5MB)
+  const docUrl = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${accNoDashes}/${primaryDoc}`;
+  verbose(`  [EDGAR] Fetching primary document: ${docUrl}`);
+
+  const MAX_HTML_BYTES = 5 * 1024 * 1024; // 5MB
+
+  return new Promise((resolve) => {
+    const req = https.get(
+      docUrl,
+      { headers: { 'User-Agent': EDGAR_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml' } },
+      (res) => {
+        let data = '';
+        let bytesRead = 0;
+        res.on('data', (chunk: Buffer | string) => {
+          const chunkStr = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+          bytesRead += Buffer.byteLength(chunkStr);
+          data += chunkStr;
+          if (bytesRead >= MAX_HTML_BYTES) {
+            req.destroy();
+            resolve(data);
+          }
+        });
+        res.on('end', () => {
+          if (res.statusCode && res.statusCode >= 400) {
+            verbose(`  [EDGAR] document returned HTTP ${res.statusCode}`);
+            resolve(null);
+            return;
+          }
+          resolve(data.length > 1000 ? data : null);
+        });
+      }
+    );
+    req.on('error', (e) => { verbose(`  [EDGAR] document request error: ${String(e)}`); resolve(null); });
+    req.setTimeout(60000, () => { req.destroy(); resolve(data.length > 1000 ? data : null); });
+    let data = '';
+  });
+}
+
+/**
+ * fetchFilingDirectly — fetch a 10-K or 20-F filing directly from EDGAR
+ * without going through Supabase Edge Functions.
+ *
+ * Uses a 100ms delay between EDGAR requests to respect rate limits.
+ *
+ * @param cik - CIK string
+ * @param formType - '10-K' or '20-F'
+ * @returns FilingResult
+ */
+async function fetchFilingDirectly(cik: string, formType: string): Promise<FilingResult> {
+  const start = Date.now();
+  verbose(`  [EDGAR-Direct] Fetching ${formType} for CIK ${cik} directly from EDGAR...`);
+
+  try {
+    // Step 1: Get filing metadata from submissions API
+    await sleep(100); // respect EDGAR rate limits
+    const filingMeta = await fetchFromEDGARSubmissions(cik);
+
+    if (!filingMeta) {
+      return {
+        succeeded: false,
+        filingType: null,
+        filingDate: null,
+        htmlSizeBytes: null,
+        html: null,
+        error: `No ${formType} filing found in EDGAR submissions for CIK ${cik}`,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    // Check if the found form matches what we want (or accept any annual report)
+    const targetForms = ['10-K', '20-F', '40-F'];
+    if (!targetForms.includes(filingMeta.form)) {
+      return {
+        succeeded: false,
+        filingType: null,
+        filingDate: null,
+        htmlSizeBytes: null,
+        html: null,
+        error: `Found form ${filingMeta.form} but expected ${formType}`,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    verbose(`  [EDGAR-Direct] Found ${filingMeta.form} filed ${filingMeta.filingDate}, accession: ${filingMeta.accessionNumber}`);
+
+    // Step 2: Fetch the HTML document
+    await sleep(100); // respect EDGAR rate limits
+    const html = await fetchFilingHTMLFromEDGAR(cik, filingMeta.accessionNumber);
+
+    if (!html || html.length < 1000) {
+      return {
+        succeeded: false,
+        filingType: filingMeta.form as '10-K' | '20-F' | '40-F',
+        filingDate: filingMeta.filingDate,
+        htmlSizeBytes: html ? html.length : 0,
+        html: null,
+        error: `HTML document too small or empty (${html ? html.length : 0} bytes)`,
+        durationMs: Date.now() - start,
+      };
+    }
+
+    log(`  [EDGAR-Direct] ✅ Retrieved ${filingMeta.form} (${(html.length / 1024 / 1024).toFixed(1)}MB) via direct EDGAR`);
+
+    return {
+      succeeded: true,
+      filingType: filingMeta.form as '10-K' | '20-F' | '40-F',
+      filingDate: filingMeta.filingDate,
+      htmlSizeBytes: html.length,
+      html,
+      error: null,
+      durationMs: Date.now() - start,
+    };
+  } catch (e) {
+    return {
+      succeeded: false,
+      filingType: null,
+      filingDate: null,
+      htmlSizeBytes: null,
+      html: null,
+      error: `Direct EDGAR fetch error: ${String(e)}`,
+      durationMs: Date.now() - start,
+    };
+  }
+}
+
 // ─── Exponential Backoff Retry Utility ───────────────────────────────────────
 
 /**
@@ -654,8 +931,8 @@ async function resolveCIK(ticker: string): Promise<{
     return { cik: TICKER_TO_CIK_MAP[baseTicker], source: 'hardcoded', durationMs: Date.now() - start };
   }
 
-  // Attempt EDGAR search via Supabase Edge Function
-  if (!IS_DRY_RUN && SUPABASE_URL) {
+  // Attempt EDGAR search via Supabase Edge Function (only if Supabase creds are available)
+  if (!IS_DRY_RUN && SUPABASE_URL && SUPABASE_ANON_KEY) {
     try {
       verbose(`  Calling fetch_sec_cik for ${ticker}...`);
       const result = await retryWithBackoff(
@@ -668,6 +945,8 @@ async function resolveCIK(ticker: string): Promise<{
     } catch (e) {
       verbose(`  CIK search failed for ${ticker}: ${String(e)}`);
     }
+  } else if (!IS_DRY_RUN && !SUPABASE_URL) {
+    verbose(`  Skipping fetch_sec_cik for ${ticker} — Supabase not available (no SUPABASE_URL)`);
   }
 
   return { cik: null, source: 'not_found', durationMs: Date.now() - start };
@@ -692,36 +971,57 @@ async function fetchFiling(cik: string, isADR: boolean): Promise<FilingResult> {
   const primaryFormType = isADR ? '20-F' : '10-K';
   const fallbackFormType = isADR ? '10-K' : '20-F';
 
-  for (const formType of [primaryFormType, fallbackFormType]) {
-    try {
-      verbose(`  Fetching ${formType} for CIK ${cik}...`);
-      const result = await retryWithBackoff(
-        () => callEdgeFunction<{
-          html?: string;
-          htmlLength?: number;
-          filingDate?: string;
-          reportDate?: string;
-          formType?: string;
-          error?: string;
-        }>('fetch_sec_filing', { cik, formType }),
-        4, 1000, `fetch_sec_filing(${cik}, ${formType})`
-      );
+  // ── Path A: Try Supabase Edge Function (if credentials are available) ──────
+  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+    for (const formType of [primaryFormType, fallbackFormType]) {
+      try {
+        verbose(`  [Supabase] Fetching ${formType} for CIK ${cik}...`);
+        const result = await retryWithBackoff(
+          () => callEdgeFunction<{
+            html?: string;
+            htmlLength?: number;
+            filingDate?: string;
+            reportDate?: string;
+            formType?: string;
+            error?: string;
+          }>('fetch_sec_filing', { cik, formType }),
+          4, 1000, `fetch_sec_filing(${cik}, ${formType})`
+        );
 
-      if (result.html && result.htmlLength && result.htmlLength > 1000) {
-        return {
-          succeeded: true,
-          filingType: (result.formType || formType) as '10-K' | '20-F' | '40-F',
-          filingDate: result.filingDate || result.reportDate || null,
-          htmlSizeBytes: result.htmlLength,
-          html: result.html,
-          error: null,
-          durationMs: Date.now() - start,
-        };
+        if (result.html && result.htmlLength && result.htmlLength > 1000) {
+          verbose(`  [Supabase] ✅ Retrieved ${formType} via Supabase edge function`);
+          return {
+            succeeded: true,
+            filingType: (result.formType || formType) as '10-K' | '20-F' | '40-F',
+            filingDate: result.filingDate || result.reportDate || null,
+            htmlSizeBytes: result.htmlLength,
+            html: result.html,
+            error: null,
+            durationMs: Date.now() - start,
+          };
+        }
+      } catch (e) {
+        verbose(`  [Supabase] ${formType} fetch failed: ${String(e)} — will try direct EDGAR`);
       }
-    } catch (e) {
-      verbose(`  ${formType} fetch failed: ${String(e)}`);
+      // Small delay between form type attempts
+      await sleep(500);
     }
-    // Small delay between form type attempts
+    verbose(`  [Supabase] All form types failed — falling through to direct EDGAR`);
+  } else {
+    verbose(`  [Supabase] Credentials not set — using direct EDGAR mode`);
+  }
+
+  // ── Path B: Direct EDGAR fallback (no Supabase required) ──────────────────
+  // Try primary form type first, then fallback
+  for (const formType of [primaryFormType, fallbackFormType]) {
+    const directResult = await fetchFilingDirectly(cik, formType);
+    if (directResult.succeeded) {
+      return {
+        ...directResult,
+        durationMs: Date.now() - start,
+      };
+    }
+    verbose(`  [EDGAR-Direct] ${formType} failed: ${directResult.error}`);
     await sleep(500);
   }
 
@@ -731,10 +1031,11 @@ async function fetchFiling(cik: string, isADR: boolean): Promise<FilingResult> {
     filingDate: null,
     htmlSizeBytes: null,
     html: null,
-    error: 'No filing found for 10-K or 20-F',
+    error: 'No filing found via Supabase or direct EDGAR for 10-K or 20-F',
     durationMs: Date.now() - start,
   };
 }
+
 
 // ─── Step 3: Structured Parsing ───────────────────────────────────────────────
 
@@ -2526,70 +2827,17 @@ async function main(): Promise<void> {
   log('═══════════════════════════════════════════════════════════════');
 
   if (!IS_DRY_RUN && (!SUPABASE_URL || !SUPABASE_ANON_KEY)) {
-    log('⚠️  WARNING: Supabase credentials are not set.');
-    log('   Required environment variables (either form is accepted):');
-    log('     SUPABASE_URL  or  VITE_SUPABASE_URL');
-    log('     SUPABASE_ANON_KEY  or  VITE_SUPABASE_ANON_KEY');
+    log('⚠️  WARNING: Supabase credentials are not set (SUPABASE_URL / SUPABASE_ANON_KEY).');
+    log('   The script will continue in DEGRADED MODE:');
+    log('   • Filing retrieval: direct EDGAR HTTPS calls (no Supabase edge function)');
+    log('   • CIK resolution:   hardcoded map only (Cat A companies unaffected)');
+    log('   • Narrative LLM:    skipped (OPENAI_API_KEY check handles this separately)');
+    log('   • Local regex extraction: always-on, provides baseline country coverage');
     log('');
-    log('   In GitHub Actions: add them as repository secrets:');
+    log('   To enable full mode: add SUPABASE_URL and SUPABASE_ANON_KEY as GitHub secrets.');
     log('   → Settings → Secrets and variables → Actions → New repository secret');
     log('');
-    log('   Writing an error-state results file so the dashboard shows this message.');
-    log('   To test without secrets: npx tsx src/scripts/runSECBaseline.ts --dry-run');
-
-    const nowIso = new Date().toISOString();
-    const errorMsg =
-      'Missing required secrets: SUPABASE_URL and/or SUPABASE_ANON_KEY. ' +
-      'Please add these as GitHub repository secrets under ' +
-      'Settings → Secrets and variables → Actions.';
-
-    const errorSummary: RunSummary = {
-      runId,
-      phase: SINGLE_TICKER ? 'single' : PHASE,
-      startTime,
-      endTime: nowIso,
-      durationMs: 0,
-      totalCompanies: 0,
-      completedCompanies: 0,
-      failedCompanies: 0,
-      skippedCompanies: 0,
-      results: [],
-      error: errorMsg,
-      _degradedMode: true,
-      _degradedReason: errorMsg,
-    };
-
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    fs.writeFileSync(LATEST_FILE, JSON.stringify(errorSummary, null, 2), 'utf-8');
-    log(`✅ Error-state latest.json written to: ${LATEST_FILE}`);
-
-    const errorSummaryMd = [
-      '# SEC Baseline Run — Error State',
-      '',
-      `**Run ID:** ${runId}`,
-      `**Timestamp:** ${nowIso}`,
-      '',
-      '## ❌ Missing GitHub Secrets',
-      '',
-      errorMsg,
-      '',
-      '## How to Fix',
-      '',
-      '1. Go to your GitHub repository',
-      '2. Click **Settings** → **Secrets and variables** → **Actions**',
-      '3. Click **New repository secret** and add:',
-      '   - `SUPABASE_URL` — your Supabase project URL (e.g. `https://xxxx.supabase.co`)',
-      '   - `SUPABASE_ANON_KEY` — your Supabase anon/public key',
-      '4. Re-run the **SEC Runtime Baseline** workflow',
-    ].join('\n');
-    fs.writeFileSync(SUMMARY_FILE, errorSummaryMd, 'utf-8');
-    log(`✅ Error-state latest-summary.md written to: ${SUMMARY_FILE}`);
-    log('');
-    log('   Exiting with code 0 so the workflow commits these files to the repo.');
-    return;
-  }
-
-  if (!IS_DRY_RUN) {
+  } else if (!IS_DRY_RUN) {
     log(`✅ Supabase URL: ${SUPABASE_URL.slice(0, 30)}...`);
   }
 
