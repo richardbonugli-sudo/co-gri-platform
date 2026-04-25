@@ -1713,29 +1713,6 @@ async function parseNarrative(html: string, ticker: string): Promise<NarrativePa
       }
     if (text.length < 200) continue;
     try {
-</to_replace>
-</Editor.edit_file_by_replace>
-
-Now apply the workflow file changes:
-
-## FILE 2: Change 1 — Add `SCRIPT_BUDGET_MS` env var to the workflow
-
-<Editor.edit_file_by_replace>
-<file_name>
-/workspace/shadcn-ui/.github/workflows/run-sec-baseline.yml
-</file_name>
-<to_replace>
-      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
-      # 150 min - 8 min = 142 min = 8520 seconds
-      SCRIPT_BUDGET_SECONDS: 8520
-</to_replace>
-<new_content>
-      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
-      # 150 min - 8 min = 142 min = 8520 seconds
-      SCRIPT_BUDGET_SECONDS: 8520
-      # Pass budget in milliseconds to the Node.js script's internal watchdog
-      # 135 min = 8100s = 8100000ms (15 min less than hard limit for flush+commit)
-      SCRIPT_BUDGET_MS: 8100000
       verbose(`  Calling extract_geographic_narrative [${sectionName}] for ${ticker} (${text.length} chars)...`);
       const result = await retryWithBackoff(
         () => callEdgeFunction<{
@@ -2126,129 +2103,6 @@ async function processCompanyWithTimeout(
 // ─── Per-Company Pipeline ─────────────────────────────────────────────────────
 
 async function processCompany(
-</to_replace>
-</Editor.edit_file_by_replace>
-
-## FILE 1: Change 4 — Replace gracefulShutdown handler and task loop in `main()`
-
-<Editor.edit_file_by_replace>
-<file_name>
-/workspace/shadcn-ui/src/scripts/runSECBaseline.ts
-</file_name>
-<to_replace>
-  // Register SIGTERM / SIGINT handlers here so they close over newResults,
-  // previousResults, and the other locals needed to flush partial results.
-  // These replace any earlier handlers registered at module level.
-  const gracefulShutdown = (sig: string) => {
-    if (ABORT_REQUESTED) return; // already handling
-    ABORT_REQUESTED = true;
-    log(`\n⚠️  ${sig} received — stopping after in-flight tasks complete...`);
-    log('   Partial results will be flushed and the process will exit cleanly.');
-    // Give in-flight tasks up to 60 s to finish, then force-flush and exit.
-    setTimeout(() => {
-      log('   Force-flush timeout reached — writing whatever is available now.');
-      flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
-      process.exit(0);
-    }, 60_000).unref();
-  };
-  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.once('SIGINT',  () => gracefulShutdown('SIGINT'));
-
-  const tasks = tickers.map((ticker, index) =>
-    (async () => {
-      // Skip new work if abort was requested — in-flight tasks finish naturally
-      if (ABORT_REQUESTED) return;
-      await semaphore.acquire();
-      try {
-        if (ABORT_REQUESTED) return; // re-check after acquiring semaphore
-        const result = await processCompany(ticker, index + previousResults.length, total + previousResults.length);
-        newResults.push(result);
-        appendCheckpoint(result);
-        processedCount++;
-      } finally {
-        semaphore.release();
-      }
-    })()
-  );
-
-  await Promise.all(tasks);
-
-  // If we were aborted, flush partial results and exit — skip the normal summary block
-  if (ABORT_REQUESTED) {
-    flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
-    process.exit(0);
-  }
-</to_replace>
-<new_content>
-  // ── Graceful shutdown triggered by SIGTERM/SIGINT or internal budget ──────
-  const triggerGracefulShutdown = (reason: string) => {
-    if (ABORT_REQUESTED) return;
-    ABORT_REQUESTED = true;
-    log(`\n⚠️  ${reason} — draining in-flight tasks then flushing results...`);
-    log(`   Remaining budget: ${Math.round(remainingBudgetMs() / 1000)}s`);
-    // Reject all queued (not yet started) semaphore waiters immediately
-    semaphore.abortAll('Budget exceeded — aborting queued tasks');
-    // Force-flush after 30s regardless (don't use .unref() — we MUST flush)
-    setTimeout(() => {
-      log('   Force-flush timeout reached — writing whatever is available now.');
-      flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
-      process.exit(0);
-    }, 30_000);
-  };
-
-  process.once('SIGTERM', () => triggerGracefulShutdown('SIGTERM received'));
-  process.once('SIGINT',  () => triggerGracefulShutdown('SIGINT received'));
-
-  // Internal budget watchdog — polls every 30s and triggers shutdown when
-  // the wall-clock budget is exceeded. This is the primary shutdown mechanism
-  // and does NOT depend on external signals from `timeout` or `setsid`.
-  const budgetWatchdog = setInterval(() => {
-    if (isBudgetExceeded() && !ABORT_REQUESTED) {
-      clearInterval(budgetWatchdog);
-      triggerGracefulShutdown(`Internal budget exceeded (${Math.round(SCRIPT_BUDGET_MS / 60000)}min)`);
-    }
-  }, 30_000);
-  // Do NOT unref() — we need this interval to keep the process alive and fire
-
-  const tasks = tickers.map((ticker, index) =>
-    (async () => {
-      if (ABORT_REQUESTED) return;
-      // Check budget before even queuing
-      if (isBudgetExceeded()) {
-        triggerGracefulShutdown('Budget exceeded before task start');
-        return;
-      }
-      try {
-        await semaphore.acquire();
-      } catch {
-        // Semaphore was aborted (budget exceeded while waiting)
-        return;
-      }
-      try {
-        if (ABORT_REQUESTED) return;
-        const result = await processCompanyWithTimeout(
-          ticker,
-          index + previousResults.length,
-          total + previousResults.length
-        );
-        newResults.push(result);
-        appendCheckpoint(result);
-        processedCount++;
-      } finally {
-        semaphore.release();
-      }
-    })()
-  );
-
-  await Promise.all(tasks);
-
-  clearInterval(budgetWatchdog);
-
-  // If we were aborted, flush partial results and exit — skip the normal summary block
-  if (ABORT_REQUESTED) {
-    flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
-    process.exit(0);
-  }
   ticker: string,
   index: number,
   total: number
@@ -2809,29 +2663,56 @@ async function main(): Promise<void> {
   // Register SIGTERM / SIGINT handlers here so they close over newResults,
   // previousResults, and the other locals needed to flush partial results.
   // These replace any earlier handlers registered at module level.
-  const gracefulShutdown = (sig: string) => {
-    if (ABORT_REQUESTED) return; // already handling
+  const triggerGracefulShutdown = (reason: string) => {
+    if (ABORT_REQUESTED) return;
     ABORT_REQUESTED = true;
-    log(`\n⚠️  ${sig} received — stopping after in-flight tasks complete...`);
-    log('   Partial results will be flushed and the process will exit cleanly.');
-    // Give in-flight tasks up to 60 s to finish, then force-flush and exit.
+    log(`\n⚠️  ${reason} — draining in-flight tasks then flushing results...`);
+    log(`   Remaining budget: ${Math.round(remainingBudgetMs() / 1000)}s`);
+    // Reject all queued (not yet started) semaphore waiters immediately
+    semaphore.abortAll('Budget exceeded — aborting queued tasks');
+    // Force-flush after 30s regardless (don't use .unref() — we MUST flush)
     setTimeout(() => {
       log('   Force-flush timeout reached — writing whatever is available now.');
       flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
       process.exit(0);
-    }, 60_000).unref();
+    }, 30_000);
   };
-  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-  process.once('SIGINT',  () => gracefulShutdown('SIGINT'));
+
+  process.once('SIGTERM', () => triggerGracefulShutdown('SIGTERM received'));
+  process.once('SIGINT',  () => triggerGracefulShutdown('SIGINT received'));
+
+  // Internal budget watchdog — polls every 30s and triggers shutdown when
+  // the wall-clock budget is exceeded. This is the primary shutdown mechanism
+  // and does NOT depend on external signals from `timeout` or `setsid`.
+  const budgetWatchdog = setInterval(() => {
+    if (isBudgetExceeded() && !ABORT_REQUESTED) {
+      clearInterval(budgetWatchdog);
+      triggerGracefulShutdown(`Internal budget exceeded (${Math.round(SCRIPT_BUDGET_MS / 60000)}min)`);
+    }
+  }, 30_000);
+  // Do NOT unref() — we need this interval to keep the process alive and fire
 
   const tasks = tickers.map((ticker, index) =>
     (async () => {
-      // Skip new work if abort was requested — in-flight tasks finish naturally
       if (ABORT_REQUESTED) return;
-      await semaphore.acquire();
+      // Check budget before even queuing
+      if (isBudgetExceeded()) {
+        triggerGracefulShutdown('Budget exceeded before task start');
+        return;
+      }
       try {
-        if (ABORT_REQUESTED) return; // re-check after acquiring semaphore
-        const result = await processCompany(ticker, index + previousResults.length, total + previousResults.length);
+        await semaphore.acquire();
+      } catch {
+        // Semaphore was aborted (budget exceeded while waiting)
+        return;
+      }
+      try {
+        if (ABORT_REQUESTED) return;
+        const result = await processCompanyWithTimeout(
+          ticker,
+          index + previousResults.length,
+          total + previousResults.length
+        );
         newResults.push(result);
         appendCheckpoint(result);
         processedCount++;
@@ -2842,6 +2723,8 @@ async function main(): Promise<void> {
   );
 
   await Promise.all(tasks);
+
+  clearInterval(budgetWatchdog);
 
   // If we were aborted, flush partial results and exit — skip the normal summary block
   if (ABORT_REQUESTED) {
