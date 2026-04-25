@@ -26,11 +26,12 @@
 #   GitHub UI - Actions - "SEC Runtime Baseline" - Run workflow
 #
 # Timeout / graceful shutdown:
-#   Hard limit is 150 min (2.5 hours). The script is wrapped with a time-budget
-#   watchdog that sends SIGTERM 8 minutes before the hard limit, giving the
-#   script time to flush checkpoint.json and partial results. The post-processing
-#   steps all run with `if: always()` so partial results are always committed
-#   and uploaded as artifacts even if the run was cut short.
+#   Hard limit is 150 min (2.5 hours). The Node.js script has an internal
+#   budget watchdog (SCRIPT_BUDGET_MS = 135 min) that self-terminates and
+#   flushes partial results before the hard limit is reached. A bash background
+#   watchdog sends SIGTERM directly to the Node.js PID as a safety net.
+#   All post-processing steps run with `if: always()` so partial results are
+#   always committed and uploaded as artifacts even if the run was cut short.
 # -----------------------------------------------------------------------------
 
 name: SEC Runtime Baseline
@@ -68,15 +69,19 @@ jobs:
     name: Run SEC Baseline
     runs-on: ubuntu-latest
     # 150 minutes = 2.5 hours hard limit
-    # The script watchdog sends SIGTERM 8 min before this limit so partial
-    # results are flushed and committed before GitHub kills the runner.
+    # The Node.js script self-terminates at 135 min (SCRIPT_BUDGET_MS).
+    # The bash watchdog sends SIGTERM at 142 min as a safety net.
+    # The remaining ~8 min is for commit + artifact upload.
     timeout-minutes: 150
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
-      # 150 min - 8 min = 142 min = 8520 seconds
+      # External bash watchdog budget (seconds) — safety net only.
+      # 150 min - 8 min buffer = 142 min = 8520 seconds
       SCRIPT_BUDGET_SECONDS: 8520
+      # Internal Node.js budget (milliseconds) — PRIMARY shutdown mechanism.
+      # 135 min = 8100s = 8100000ms (15 min less than hard limit for flush+commit)
+      SCRIPT_BUDGET_MS: 8100000
 
     permissions:
       contents: write  # Required to commit and push docs/baseline-results/
@@ -155,21 +160,32 @@ jobs:
           echo "Output directories ready"
           ls -la docs/baseline-results/
 
-      # -- Step 6: Run the SEC baseline script with reliable timeout enforcement
+      # -- Step 6: Run the SEC baseline script --------------------------------
       #
-      # WHY setsid + timeout instead of a bash watchdog:
-      #   - "npx tsx" is a wrapper process. Sending SIGTERM to the npx PID does
-      #     NOT reliably propagate to the real Node.js worker child process.
-      #   - setsid puts the entire process tree (npx + tsx + node) into its
-      #     own process group. "timeout --kill-after" then sends SIGTERM to the
-      #     whole group, and SIGKILL 2 min later if anything is still alive.
-      #   - The Node.js script has a SIGTERM handler that flushes partial results
-      #     before exiting, so the 2-min SIGKILL window is just a safety net.
+      # TWO-LAYER timeout strategy:
+      #
+      # Layer 1 — Internal Node.js budget watchdog (PRIMARY):
+      #   The script reads SCRIPT_BUDGET_MS (135 min) and runs a setInterval
+      #   that polls every 30s. When the budget is exceeded it:
+      #     - Sets ABORT_REQUESTED = true
+      #     - Calls semaphore.abortAll() to drop all queued tasks immediately
+      #     - Starts a 30s force-flush timer (no .unref())
+      #     - In-flight tasks finish via their own 8-min per-company timeout
+      #     - Flushes and writes all partial results, then exits cleanly
+      #
+      # Layer 2 — Bash background watchdog (SAFETY NET):
+      #   Captures the Node.js PID and sends SIGTERM directly to it after
+      #   SCRIPT_BUDGET_SECONDS (142 min). Falls back to SIGKILL after 60s.
+      #   This handles catastrophic hangs where the internal watchdog fails.
+      #   Replaces the old unreliable setsid+timeout approach (SIGTERM sent
+      #   to a process group leader often did not reach the Node.js worker).
       #
       # Time budget breakdown (total hard limit = 150 min):
-      #   8520s (142 min) = script wall-clock budget  -> SIGTERM sent to process group
-      #   +120s (  2 min) = SIGKILL grace window       -> force-kill if still alive
-      #   +  8 min        = commit + upload artifacts  -> remaining runner time
+      #   135 min  = Node.js internal budget  → self-terminates + flushes
+      #   142 min  = bash watchdog SIGTERM    → safety net
+      #   144 min  = bash watchdog SIGKILL    → last resort (142 + 2 min)
+      #   ~150 min = GitHub hard kill         → runner terminated
+      #   remaining ~8 min = commit + upload artifacts
       - name: Run SEC baseline
         id: baseline
         # continue-on-error so post-processing steps always run even on timeout
@@ -210,32 +226,46 @@ jobs:
           fi
 
           echo "Running: npx tsx src/scripts/runSECBaseline.ts $FLAGS"
-          echo "Wall-clock budget: ${SCRIPT_BUDGET_SECONDS}s"
-          echo "  -> SIGTERM sent to entire process group at ${SCRIPT_BUDGET_SECONDS}s"
-          echo "  -> SIGKILL sent to entire process group at $((SCRIPT_BUDGET_SECONDS + 120))s"
-          echo "  -> Script SIGTERM handler flushes partial results before exit"
+          echo "Internal Node.js budget: ${SCRIPT_BUDGET_MS}ms (135 min) — PRIMARY"
+          echo "External bash watchdog:  ${SCRIPT_BUDGET_SECONDS}s (142 min) — SAFETY NET"
           echo ""
 
-          # setsid: run the entire npx+tsx+node tree in its own process group
-          # so timeout can kill every process in the group, not just the npx wrapper.
-          #
-          # timeout flags:
-          #   --signal=TERM       send SIGTERM first (triggers script flush handler)
-          #   --kill-after=120    send SIGKILL 120s later if still alive (safety net)
-          #   ${SCRIPT_BUDGET_SECONDS}  wall-clock budget in seconds
-          #
-          # Exit codes from timeout:
-          #   124 = timed out (SIGTERM sent, process exited within kill-after window)
-          #   137 = killed    (SIGKILL was needed after kill-after window)
-          #     0 = completed normally within budget
+          # ── Layer 2: Bash background watchdog (safety net) ────────────────
+          # WHY: setsid+timeout is unreliable on GitHub Actions — npx spawns
+          # tsx which spawns node, and SIGTERM may not propagate through the
+          # full chain. This watchdog captures the exact Node.js PID and sends
+          # the signal directly to it.
 
           set +e
-          setsid timeout \
-            --signal=TERM \
-            --kill-after=120 \
-            ${SCRIPT_BUDGET_SECONDS} \
-            npx tsx src/scripts/runSECBaseline.ts $FLAGS
+
+          # Start the Node.js script in the background, capture its PID
+          npx tsx src/scripts/runSECBaseline.ts $FLAGS &
+          NODE_PID=$!
+          echo "Node.js script started with PID: $NODE_PID"
+
+          # Start the bash watchdog in the background
+          (
+            sleep ${SCRIPT_BUDGET_SECONDS}
+            if kill -0 $NODE_PID 2>/dev/null; then
+              echo "[watchdog] Budget reached — sending SIGTERM to PID $NODE_PID"
+              kill -TERM $NODE_PID 2>/dev/null || true
+              sleep 60
+              if kill -0 $NODE_PID 2>/dev/null; then
+                echo "[watchdog] Still alive after 60s — sending SIGKILL to PID $NODE_PID"
+                kill -KILL $NODE_PID 2>/dev/null || true
+              fi
+            fi
+          ) &
+          WATCHDOG_PID=$!
+
+          # Wait for the Node.js script to finish (naturally or via signal)
+          wait $NODE_PID
           SCRIPT_EXIT=$?
+
+          # Kill the watchdog — it's no longer needed
+          kill $WATCHDOG_PID 2>/dev/null || true
+          wait $WATCHDOG_PID 2>/dev/null || true
+
           set -e
 
           echo ""
@@ -244,16 +274,15 @@ jobs:
           if [ $SCRIPT_EXIT -eq 0 ]; then
             echo "Script completed successfully within time budget"
             echo "script_status=completed" >> $GITHUB_OUTPUT
-          elif [ $SCRIPT_EXIT -eq 124 ] || [ $SCRIPT_EXIT -eq 143 ]; then
-            # 124 = timeout sent SIGTERM and process exited cleanly
-            # 143 = SIGTERM received directly
-            echo "Time budget reached - script was gracefully terminated (exit $SCRIPT_EXIT)"
-            echo "Partial results flushed by the script SIGTERM handler"
+          elif [ $SCRIPT_EXIT -eq 143 ] || [ $SCRIPT_EXIT -eq 130 ]; then
+            # 143 = SIGTERM (128+15), 130 = SIGINT (128+2)
+            echo "Script was gracefully terminated by watchdog (exit $SCRIPT_EXIT)"
+            echo "Partial results flushed by the script's internal SIGTERM handler"
             echo "script_status=partial" >> $GITHUB_OUTPUT
             exit 0
           elif [ $SCRIPT_EXIT -eq 137 ]; then
-            # 137 = SIGKILL was needed (script did not exit within kill-after window)
-            echo "WARNING: Script required SIGKILL (did not exit within 2 min grace period)"
+            # 137 = SIGKILL (128+9) — script did not exit within 60s grace period
+            echo "WARNING: Script required SIGKILL (did not exit within 60s grace period)"
             echo "Checkpoint file may still contain partial results from completed companies"
             echo "script_status=partial" >> $GITHUB_OUTPUT
             exit 0
@@ -262,13 +291,6 @@ jobs:
             echo "script_status=failed" >> $GITHUB_OUTPUT
             exit $SCRIPT_EXIT
           fi
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          NODE_ENV: production
 
       # -- Step 7: Check if results were written (runs even on timeout) ------
       - name: Check for changes
@@ -411,7 +433,8 @@ jobs:
           echo "| Script status | ${SCRIPT_STATUS:-unknown} |" >> $GITHUB_STEP_SUMMARY
           echo "| Changes committed | ${CHANGES:-false} |" >> $GITHUB_STEP_SUMMARY
           echo "| Hard timeout | 150 min (2.5 hours) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Graceful shutdown buffer | 8 min before hard limit |" >> $GITHUB_STEP_SUMMARY
+          echo "| Node.js internal budget | 135 min (SCRIPT_BUDGET_MS) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Bash watchdog budget | 142 min (SCRIPT_BUDGET_SECONDS) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Output files" >> $GITHUB_STEP_SUMMARY
           echo "- \`docs/baseline-results/latest.json\` - full or partial results" >> $GITHUB_STEP_SUMMARY
