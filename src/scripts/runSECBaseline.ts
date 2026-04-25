@@ -63,6 +63,39 @@
  *
  * Fix 12: narrativeParsingSucceeded threshold lowered to >= 1 location
  *         (was already correct, but local fallback now guarantees coverage).
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * SUPPLY CHANNEL ENHANCEMENTS (2026-04-25):
+ *
+ * Fix 13: Per-channel country counts in NarrativeParsingResult — adds
+ *         supplyCountriesFound, revenueCountriesFound, assetsCountriesFound,
+ *         financialCountriesFound, exhibit21CountriesFound fields so that
+ *         determineChannelTiers() can use channel-specific evidence rather
+ *         than the single aggregate countriesFound integer.
+ *
+ * Fix 14: extractSupplyCountriesLocally() — sentence-level, supply-keyword-
+ *         filtered extraction. Only counts countries in sentences that contain
+ *         at least one supply keyword (supplier, manufacturer, sourcing,
+ *         procurement, contract manufacturer, assembly, fabrication, vendor,
+ *         third-party manufacturer, OEM, ODM, foundry, raw material,
+ *         component, logistics, distribution center, warehouse). Excludes
+ *         currency codes and regional aggregates (EMEA, Americas, etc.) which
+ *         are noise for supply-chain evidence.
+ *
+ * Fix 15: exhibit21CountriesFound in StructuredParsingResult — parseStructured
+ *         Data() now extracts Exhibit 21 text inline via the same anchor/
+ *         heading patterns used in extractNarrativeSectionsFromHTML, then
+ *         counts actual countries using extractCountriesLocally(). The old
+ *         exhibit21Found boolean is retained as exhibit21Referenced for audit.
+ *
+ * Fix 16: determineChannelTiers() supply logic rewired — supply tier now uses
+ *         exhibit21CountriesFound (from structured parsing) and
+ *         supplyCountriesFound (from narrative parsing) instead of the
+ *         aggregate countriesFound. New DIRECT path added: supply = DIRECT
+ *         when exhibit21CountriesFound >= 3 (parsed subsidiary list with
+ *         actual countries). ALLOCATED when exhibit21CountriesFound >= 1 OR
+ *         supplyCountriesFound >= 3. MODELED when supplyCountriesFound >= 1.
+ *         FALLBACK otherwise.
  * ─────────────────────────────────────────────────────────────────────────────
  * IMPORTANT — parseStructuredData() uses cheerio DOM parsing (NOT raw string
  * keyword scanning) to detect revenue, PP&E, and debt tables. This mirrors the
@@ -381,6 +414,11 @@ interface BaselineResult {
   // Step 4: Narrative Parsing
   narrativeParsingSucceeded: boolean;
   narrativeCountriesFound: number;
+  narrativeSupplyCountriesFound: number;
+  narrativeRevenueCountriesFound: number;
+  narrativeAssetsCountriesFound: number;
+  narrativeExhibit21CountriesFound: number;
+  structuredExhibit21CountriesFound: number;
   narrativeParsingMs: number;
 
   // Step 5: Channel Evidence Tiers
@@ -686,8 +724,78 @@ interface StructuredParsingResult {
   revenueTableFound: boolean;
   ppeTableFound: boolean;
   debtTableFound: boolean;
+  /** @deprecated use exhibit21Referenced — kept for JSON backward compat */
   exhibit21Found: boolean;
+  /** True if "exhibit 21" / "subsidiaries of the registrant" text was found anywhere in the document */
+  exhibit21Referenced: boolean;
+  /** Number of distinct countries extracted from the Exhibit 21 text block (0 if not found inline) */
+  exhibit21CountriesFound: number;
   durationMs: number;
+}
+
+/**
+ * extractExhibit21TextFromHTML — extract Exhibit 21 text block from raw HTML
+ *
+ * Uses the same anchor patterns as extractNarrativeSectionsFromHTML but is
+ * called from parseStructuredData() which already has the raw HTML available.
+ * Returns stripped plain text of up to 20 000 chars, or null if not found.
+ */
+function extractExhibit21TextFromHTML(rawHtml: string): string | null {
+  const exhibit21AnchorPatterns: RegExp[] = [
+    /id=["'][^"']*exhibit[_\s-]*21[^"']*["']/i,
+    /name=["'][^"']*exhibit[_\s-]*21[^"']*["']/i,
+    /id=["'][^"']*subsidiaries[^"']*["']/i,
+    /name=["'][^"']*subsidiaries[^"']*["']/i,
+  ];
+
+  for (const pat of exhibit21AnchorPatterns) {
+    const m = rawHtml.match(pat);
+    if (m && m.index !== undefined) {
+      const slice = rawHtml.substring(m.index, m.index + 600_000);
+      return slice
+        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<ix:[^>]*>[\s\S]*?<\/ix:[^>]*>/gi, '')
+        .replace(/<ix:[^>]*\/>/gi, '')
+        .replace(/<\/ix:[^>]*>/gi, '')
+        .replace(/<ix:[^>]*>/gi, '')
+        .replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#\d+;/g, ' ')
+        .replace(/&#x[0-9a-fA-F]+;/g, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s{3,}/g, ' ')
+        .trim()
+        .substring(0, 20000);
+    }
+  }
+
+  // Plain-text fallback: search for Exhibit 21 heading in stripped text
+  const stripped = rawHtml
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const plainPatterns = [
+    /Exhibit\s+21/i,
+    /Subsidiaries\s+of\s+the\s+Registrant/i,
+    /List\s+of\s+Subsidiaries/i,
+    /SUBSIDIARIES\s+OF\s+THE\s+REGISTRANT/i,
+  ];
+
+  for (const pat of plainPatterns) {
+    const m = stripped.match(pat);
+    if (m && m.index !== undefined) {
+      return stripped.substring(m.index, m.index + 20000);
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -798,16 +906,42 @@ function parseStructuredData(html: string): StructuredParsingResult {
     if (revenueTableFound && ppeTableFound && debtTableFound) return false;
   });
 
-  // ── Exhibit 21 detection (document-level, not table-level) ───────────────
+  // ── Exhibit 21 detection (document-level presence check) ─────────────────
   const docText = $.root().text().toLowerCase();
-  const exhibit21Found =
+  const exhibit21Referenced =
     docText.includes('exhibit 21') ||
     docText.includes('subsidiaries of the registrant') ||
     docText.includes('list of subsidiaries');
 
+  // ── Exhibit 21 country extraction (inline text, not just presence) ────────
+  // Extract the Exhibit 21 text block from raw HTML using the same anchor
+  // patterns as extractNarrativeSectionsFromHTML, then count actual countries.
+  let exhibit21CountriesFound = 0;
+  if (exhibit21Referenced) {
+    const exhibit21TextBlock = extractExhibit21TextFromHTML(html);
+    if (exhibit21TextBlock && exhibit21TextBlock.length > 50) {
+      const ex21Countries = extractCountriesLocally(exhibit21TextBlock);
+      // Exclude regional aggregates and overly broad terms from Exhibit 21 count
+      // (Exhibit 21 should contain specific country names, not "Americas" etc.)
+      const REGIONAL_NOISE = new Set([
+        'Americas', 'North America', 'Latin America', 'South America', 'Central America',
+        'Europe', 'EMEA', 'Western Europe', 'Eastern Europe', 'Central Europe',
+        'Asia', 'Asia-Pacific', 'APAC', 'Asia Pacific', 'Southeast Asia',
+        'Middle East', 'Africa', 'Sub-Saharan Africa', 'North Africa',
+        'Greater China', 'Greater Asia', 'Rest of World', 'International',
+        'Emerging Markets', 'Developed Markets',
+      ]);
+      ex21Countries.forEach(c => {
+        if (!REGIONAL_NOISE.has(c)) exhibit21CountriesFound++;
+      });
+      verbose(`  [parseStructuredData] Exhibit 21 inline countries: ${exhibit21CountriesFound}`);
+    }
+  }
+
+  const exhibit21Found = exhibit21Referenced; // backward compat alias
   const succeeded = revenueTableFound || ppeTableFound || debtTableFound;
 
-  verbose(`  [parseStructuredData] Tables: ${tablesFound} | Rev: ${revenueTableFound} | PPE: ${ppeTableFound} | Debt: ${debtTableFound} | Ex21: ${exhibit21Found}`);
+  verbose(`  [parseStructuredData] Tables: ${tablesFound} | Rev: ${revenueTableFound} | PPE: ${ppeTableFound} | Debt: ${debtTableFound} | Ex21ref: ${exhibit21Referenced} | Ex21countries: ${exhibit21CountriesFound}`);
 
   return {
     succeeded,
@@ -816,6 +950,8 @@ function parseStructuredData(html: string): StructuredParsingResult {
     ppeTableFound,
     debtTableFound,
     exhibit21Found,
+    exhibit21Referenced,
+    exhibit21CountriesFound,
     durationMs: Date.now() - start,
   };
 }
@@ -824,7 +960,18 @@ function parseStructuredData(html: string): StructuredParsingResult {
 
 interface NarrativeParsingResult {
   succeeded: boolean;
+  /** Total unique locations found across all sections (aggregate, used for revenue/assets/financial tiers) */
   countriesFound: number;
+  /** Countries found in sentences containing supply-chain keywords (used for supply tier) */
+  supplyCountriesFound: number;
+  /** Countries found in revenue/geographic-notes sections (used for revenue tier cross-check) */
+  revenueCountriesFound: number;
+  /** Countries found in properties/assets sections (used for assets tier cross-check) */
+  assetsCountriesFound: number;
+  /** Countries found in financial/debt sections */
+  financialCountriesFound: number;
+  /** Countries found specifically in Exhibit 21 text (subsidiary list) */
+  exhibit21CountriesFound: number;
   durationMs: number;
 }
 
@@ -1225,7 +1372,6 @@ const CURRENCY_TO_COUNTRIES: Record<string, string[]> = {
   'PYG': ['Paraguay'],
   'UYU': ['Uruguay'],
   'BOB': ['Bolivia'],
-  'PEN': ['Peru'],
   'VEF': ['Venezuela'],
   'GTQ': ['Guatemala'],
   'HNL': ['Honduras'],
@@ -1360,6 +1506,115 @@ function extractCountriesLocally(text: string): Set<string> {
   return found;
 }
 
+// ─── Supply-Specific Country Extraction ──────────────────────────────────────
+
+/**
+ * Supply-chain keywords that must appear in the same sentence as a country
+ * name for that country to count as supply-channel evidence.
+ *
+ * DESIGN PRINCIPLES:
+ * - Only sentence-level co-occurrence (not document-level) to avoid noise
+ * - No currency codes (EUR, JPY etc.) — those are financial signals, not supply
+ * - No regional aggregates (EMEA, Americas) — too broad to be supply-specific
+ * - Covers direct manufacturing, sourcing, logistics, and vendor relationships
+ */
+const SUPPLY_KEYWORDS: string[] = [
+  // Supplier / vendor relationships (specific enough)
+  'supplier', 'suppliers', 'supply chain', 'supply-chain',
+  'vendor', 'vendors',
+  'third-party manufacturer', 'third party manufacturer',
+  'subcontractor', 'subcontractors',
+  'co-manufacturer', 'co-packer', 'copacker',
+
+  // Manufacturing (specific enough — "manufacturing" alone is supply-specific)
+  'manufacturer', 'manufacturers', 'manufacturing',
+  'contract manufacturer', 'contract manufacturing',
+  'toll manufacturing',
+  'oem', 'odm', 'foundry', 'foundries',
+  'factory', 'factories',
+
+  // Production facilities (multi-word — specific enough)
+  'production facility', 'production facilities',
+  'manufacturing facility', 'manufacturing facilities',
+  'manufacturing plant', 'manufacturing plants',
+  'assembly plant', 'assembly facility', 'assembly line',
+
+  // Sourcing / procurement (multi-word forms only — avoid bare 'source')
+  'sourcing', 'procure', 'procurement',
+  'outsource', 'outsourced', 'outsourcing',
+
+  // Materials (multi-word forms only — avoid bare 'component')
+  'raw material', 'raw materials',
+  'supply of components', 'key components', 'critical components',
+  'fabrication', 'fabricate',
+
+  // Distribution (multi-word forms only — avoid bare 'logistics', 'warehouse')
+  'distribution center', 'distribution centre', 'distribution facility',
+  'fulfillment center', 'fulfilment centre',
+  'logistics network', 'logistics operations', 'logistics provider',
+  'supply chain management', 'supply chain operations',
+];
+
+/**
+ * extractSupplyCountriesLocally — sentence-level supply-keyword-filtered extraction
+ *
+ * Splits text into sentences, then for each sentence checks:
+ *   1. Does it contain at least one SUPPLY_KEYWORD?
+ *   2. If yes, extract countries from that sentence using the standard
+ *      KNOWN_COUNTRIES_LOCAL + COUNTRY_ALIASES_LOCAL lists.
+ *
+ * Deliberately excludes:
+ *   - Currency codes (EUR → 12 countries is noise for supply)
+ *   - Regional aggregates (EMEA, Americas — too broad)
+ *   - Adjective forms (e.g. "Chinese" in "Chinese market" is not supply evidence)
+ *
+ * Returns a Set of canonical country names found in supply-keyword sentences.
+ */
+function extractSupplyCountriesLocally(text: string): Set<string> {
+  const found = new Set<string>();
+
+  // Split into sentences on period/semicolon/newline boundaries
+  const sentences = text.split(/[.;\n\r]+/);
+
+  for (const sentence of sentences) {
+    const lower = sentence.toLowerCase();
+
+    // Gate: sentence must contain at least one supply keyword
+    const hasSupplyKeyword = SUPPLY_KEYWORDS.some(kw => lower.includes(kw));
+    if (!hasSupplyKeyword) continue;
+
+    // Extract countries from this supply-relevant sentence
+    // Check COUNTRY_ALIASES_LOCAL
+    for (const [alias, canonical] of Object.entries(COUNTRY_ALIASES_LOCAL)) {
+      const aliasLower = alias.toLowerCase();
+      const idx = lower.indexOf(aliasLower);
+      if (idx >= 0) {
+        const before = idx > 0 ? lower[idx - 1] : ' ';
+        const after = idx + aliasLower.length < lower.length ? lower[idx + aliasLower.length] : ' ';
+        if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) {
+          found.add(canonical);
+        }
+      }
+    }
+
+    // Check KNOWN_COUNTRIES_LOCAL
+    for (const country of KNOWN_COUNTRIES_LOCAL) {
+      const countryLower = country.toLowerCase();
+      const idx = lower.indexOf(countryLower);
+      if (idx >= 0) {
+        const before = idx > 0 ? lower[idx - 1] : ' ';
+        const after = idx + countryLower.length < lower.length ? lower[idx + countryLower.length] : ' ';
+        if (!/[a-z]/.test(before) && !/[a-z]/.test(after)) {
+          found.add(country);
+        }
+      }
+    }
+    // Note: deliberately NO currency codes, NO regional aggregates, NO adjective forms
+  }
+
+  return found;
+}
+
 // ─── Main Narrative Parsing Function ─────────────────────────────────────────
 
 async function parseNarrative(html: string, ticker: string): Promise<NarrativeParsingResult> {
@@ -1374,7 +1629,16 @@ async function parseNarrative(html: string, ticker: string): Promise<NarrativePa
     .trim();
 
   if (strippedText.length < 500) {
-    return { succeeded: false, countriesFound: 0, durationMs: Date.now() - start };
+    return {
+      succeeded: false,
+      countriesFound: 0,
+      supplyCountriesFound: 0,
+      revenueCountriesFound: 0,
+      assetsCountriesFound: 0,
+      financialCountriesFound: 0,
+      exhibit21CountriesFound: 0,
+      durationMs: Date.now() - start,
+    };
   }
 
   // Use iXBRL-aware section extraction on raw HTML
@@ -1478,9 +1742,63 @@ async function parseNarrative(html: string, ticker: string): Promise<NarrativePa
   const finalCount = uniqueLocations.size;
   verbose(`  [Narrative] Final: ${finalCount} unique locations for ${ticker} (local: ${localOnlyCount}, after LLM: ${finalCount})`);
 
+  // ── Per-channel country counts ────────────────────────────────────────────
+  // Supply: sentence-level, supply-keyword-filtered across all section texts
+  const supplyLocations = new Set<string>();
+  for (const { text } of calls) {
+    if (text.length < 50) continue;
+    const sc = extractSupplyCountriesLocally(text);
+    sc.forEach(c => supplyLocations.add(c));
+  }
+  // Also scan full stripped text for supply evidence
+  const fullSupply = extractSupplyCountriesLocally(strippedText.substring(0, 150000));
+  fullSupply.forEach(c => supplyLocations.add(c));
+  const supplyCountriesFound = supplyLocations.size;
+
+  // Exhibit 21 specific: countries from exhibit21Text only (no currency/regional noise)
+  let exhibit21CountriesFound = 0;
+  if (sections.exhibit21Text && sections.exhibit21Text.length > 50) {
+    const ex21Local = extractCountriesLocally(sections.exhibit21Text);
+    const REGIONAL_NOISE_SET = new Set([
+      'Americas', 'North America', 'Latin America', 'South America', 'Central America',
+      'Europe', 'EMEA', 'Western Europe', 'Eastern Europe', 'Central Europe',
+      'Asia', 'Asia-Pacific', 'APAC', 'Asia Pacific', 'Southeast Asia',
+      'Middle East', 'Africa', 'Sub-Saharan Africa', 'North Africa',
+      'Greater China', 'Greater Asia', 'Rest of World', 'International',
+      'Emerging Markets', 'Developed Markets',
+    ]);
+    ex21Local.forEach(c => {
+      if (!REGIONAL_NOISE_SET.has(c)) exhibit21CountriesFound++;
+    });
+  }
+
+  // Revenue: countries from geoNotesText + segmentNotesText + mdaText
+  const revenueLocations = new Set<string>();
+  for (const sectionName of ['Geographic Notes', 'Segment/Geographic Notes', 'MD&A']) {
+    const call = calls.find(c => c.sectionName === sectionName);
+    if (call) extractCountriesLocally(call.text).forEach(c => revenueLocations.add(c));
+  }
+  const revenueCountriesFound = revenueLocations.size;
+
+  // Assets: countries from item2PropertiesText
+  const assetsLocations = new Set<string>();
+  const item2Call = calls.find(c => c.sectionName === 'Item 2 Properties');
+  if (item2Call) extractCountriesLocally(item2Call.text).forEach(c => assetsLocations.add(c));
+  const assetsCountriesFound = assetsLocations.size;
+
+  // Financial: countries from full narrative (debt mentions are spread across sections)
+  const financialCountriesFound = finalCount;
+
+  verbose(`  [ChannelCounts] Supply:${supplyCountriesFound} Ex21:${exhibit21CountriesFound} Revenue:${revenueCountriesFound} Assets:${assetsCountriesFound}`);
+
   return {
     succeeded: finalCount > 0,
     countriesFound: finalCount,
+    supplyCountriesFound,
+    revenueCountriesFound,
+    assetsCountriesFound,
+    financialCountriesFound,
+    exhibit21CountriesFound,
     durationMs: Date.now() - start,
   };
 }
@@ -1506,11 +1824,36 @@ function determineChannelTiers(
     revenue = 'MODELED';
   }
 
-  // Supply tier: typically from Exhibit 21 or narrative mentions
+  // Supply tier: uses channel-specific evidence (Fix 16 + Fix 17)
+  // - DIRECT:    Exhibit 21 parsed inline with >= 3 distinct countries (strong subsidiary evidence)
+  // - ALLOCATED: (a) exhibit21Referenced = true (subsidiary list confirmed, even if separate filing)
+  //               OR (b) exhibit21CountriesFound >= 1 (inline extraction succeeded)
+  //               OR (c) supply-keyword narrative has >= 2 countries (tightened keywords)
+  // - MODELED:   Supply-keyword narrative has >= 1 country (some supply-specific text found)
+  // - FALLBACK:  No supply-specific evidence found
+  //
+  // Fix 17 changes vs Fix 16:
+  //   1. SUPPLY_KEYWORDS tightened — removed bare 'source', 'component', 'assembly',
+  //      'logistics', 'warehouse' which caused false positives in financial/service filings.
+  //      Multi-word forms retained (e.g. 'assembly plant', 'logistics network').
+  //   2. ALLOCATED narrative threshold lowered from >= 3 to >= 2 countries.
+  //   3. exhibit21Referenced presence-only fallback added: if the filing confirms a
+  //      subsidiary list exists (even as a separate document), treat as ALLOCATED.
+  //      This restores the ALLOCATED floor lost when Exhibit 21 is not inline.
   let supply: EvidenceTier = 'FALLBACK';
-  if (structured.exhibit21Found) {
+  const ex21Countries = structured.exhibit21CountriesFound;
+  const supplyNarrative = narrative.supplyCountriesFound;
+  // exhibit21Referenced = true means the filing confirms a subsidiary list exists,
+  // even if it is filed as a separate document (not inline). This restores the
+  // ALLOCATED floor for companies whose Exhibit 21 is a separate .htm filing.
+  // exhibit21CountriesFound >= 1 (inline extraction) takes precedence for DIRECT.
+  const ex21Presence = structured.exhibit21Referenced ? 1 : 0;
+  const effectiveEx21 = Math.max(ex21Countries, ex21Presence);
+  if (ex21Countries >= 3) {
+    supply = 'DIRECT';
+  } else if (effectiveEx21 >= 1 || supplyNarrative >= 2) {
     supply = 'ALLOCATED';
-  } else if (narrative.countriesFound >= 2) {
+  } else if (supplyNarrative >= 1) {
     supply = 'MODELED';
   }
 
@@ -1702,6 +2045,11 @@ async function processCompany(
     structuredParsingMs: 0,
     narrativeParsingSucceeded: false,
     narrativeCountriesFound: 0,
+    narrativeSupplyCountriesFound: 0,
+    narrativeRevenueCountriesFound: 0,
+    narrativeAssetsCountriesFound: 0,
+    narrativeExhibit21CountriesFound: 0,
+    structuredExhibit21CountriesFound: 0,
     narrativeParsingMs: 0,
     channelTiers: { revenue: 'NOT_RUN', supply: 'NOT_RUN', assets: 'NOT_RUN', financial: 'NOT_RUN' },
     materiallySpecific: false,
@@ -1775,6 +2123,7 @@ async function processCompany(
     result.ppeTableFound = structured.ppeTableFound;
     result.debtTableFound = structured.debtTableFound;
     result.exhibit21Found = structured.exhibit21Found;
+    result.structuredExhibit21CountriesFound = structured.exhibit21CountriesFound;
     result.structuredParsingMs = structured.durationMs;
 
     const strIcon = structured.succeeded ? '✅' : '⚠️ ';
@@ -1784,6 +2133,10 @@ async function processCompany(
     const narrative = await parseNarrative(filing.html, ticker);
     result.narrativeParsingSucceeded = narrative.succeeded;
     result.narrativeCountriesFound = narrative.countriesFound;
+    result.narrativeSupplyCountriesFound = narrative.supplyCountriesFound;
+    result.narrativeRevenueCountriesFound = narrative.revenueCountriesFound;
+    result.narrativeAssetsCountriesFound = narrative.assetsCountriesFound;
+    result.narrativeExhibit21CountriesFound = narrative.exhibit21CountriesFound;
     result.narrativeParsingMs = narrative.durationMs;
 
     const narIcon = narrative.succeeded ? '✅' : '⚠️ ';
