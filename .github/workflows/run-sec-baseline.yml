@@ -27,7 +27,7 @@
 #
 # Timeout / graceful shutdown:
 #   Hard limit is 150 min (2.5 hours). The script is wrapped with a time-budget
-#   watchdog that sends SIGTERM 8 minutes before the hard limit, giving the
+#   watchdog that sends SIGTERM 15 minutes before the hard limit, giving the
 #   script time to flush checkpoint.json and partial results. The post-processing
 #   steps all run with `if: always()` so partial results are always committed
 #   and uploaded as artifacts even if the run was cut short.
@@ -67,16 +67,23 @@ jobs:
   run-sec-baseline:
     name: Run SEC Baseline
     runs-on: ubuntu-latest
-    # 150 minutes = 2.5 hours hard limit
-    # The script watchdog sends SIGTERM 8 min before this limit so partial
+    # 150 minutes = 2.5 hours hard limit (job-level, includes npm ci + all steps)
+    # Time budget breakdown:
+    #   ~5 min  = checkout + node setup + npm ci (cold runner overhead)
+    #   135 min = script wall-clock budget (SCRIPT_BUDGET_SECONDS below)
+    #   ~10 min = post-processing: check changes, copy, commit, upload, summary
+    #   ─────────────────────────────────────────────────────────────────────
+    #   150 min = total job hard limit
+    #
+    # The script watchdog sends SIGTERM 15 min before this limit so partial
     # results are flushed and committed before GitHub kills the runner.
     timeout-minutes: 150
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-      # Budget = hard limit minus 8-minute graceful-shutdown buffer (in seconds)
-      # 150 min - 8 min = 142 min = 8520 seconds
-      SCRIPT_BUDGET_SECONDS: 8520
+      # Budget = hard limit minus overhead and post-processing buffer (in seconds)
+      # 150 min - 5 min overhead - 10 min post-processing = 135 min = 8100 seconds
+      SCRIPT_BUDGET_SECONDS: 8100
 
     permissions:
       contents: write  # Required to commit and push docs/baseline-results/
@@ -167,9 +174,9 @@ jobs:
       #     before exiting, so the 2-min SIGKILL window is just a safety net.
       #
       # Time budget breakdown (total hard limit = 150 min):
-      #   8520s (142 min) = script wall-clock budget  -> SIGTERM sent to process group
+      #   8100s (135 min) = script wall-clock budget  -> SIGTERM sent to process group
       #   +120s (  2 min) = SIGKILL grace window       -> force-kill if still alive
-      #   +  8 min        = commit + upload artifacts  -> remaining runner time
+      #   + 10 min        = commit + upload artifacts  -> remaining runner time
       - name: Run SEC baseline
         id: baseline
         # continue-on-error so post-processing steps always run even on timeout
@@ -178,7 +185,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SCRIPT_BUDGET_MS: "8520000"
+          SCRIPT_BUDGET_MS: "8100000"
         run: |
           # -- Build CLI flags ----------------------------------------------
           FLAGS=""
@@ -430,7 +437,7 @@ jobs:
           echo "| Script status | ${SCRIPT_STATUS:-unknown} |" >> $GITHUB_STEP_SUMMARY
           echo "| Changes committed | ${CHANGES:-false} |" >> $GITHUB_STEP_SUMMARY
           echo "| Hard timeout | 150 min (2.5 hours) |" >> $GITHUB_STEP_SUMMARY
-          echo "| Graceful shutdown buffer | 8 min before hard limit |" >> $GITHUB_STEP_SUMMARY
+          echo "| Graceful shutdown buffer | 15 min before hard limit (135 min script budget) |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Output files" >> $GITHUB_STEP_SUMMARY
           echo "- \`docs/baseline-results/latest.json\` - full or partial results" >> $GITHUB_STEP_SUMMARY
