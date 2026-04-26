@@ -8,8 +8,8 @@
  *
  * Usage:
  *   npx tsx src/scripts/runSECBaseline.ts                    # Full run (Cat A+B+C)
- *   npx tsx src/scripts/runSECBaseline.ts --phase=1          # Cat A only (pilot, 41 companies)
- *   npx tsx src/scripts/runSECBaseline.ts --phase=2          # Cat A+B (55 companies)
+ *   npx tsx src/scripts/runSECBaseline.ts --phase=1          # Cat A only (138 companies)
+ *   npx tsx src/scripts/runSECBaseline.ts --phase=2          # Cat A+B (~180 companies)
  *   npx tsx src/scripts/runSECBaseline.ts --phase=3          # Cat A+B+C (all SEC-eligible)
  *   npx tsx src/scripts/runSECBaseline.ts --ticker=AAPL      # Single ticker test
  *   npx tsx src/scripts/runSECBaseline.ts --dry-run          # List tickers only, no API calls
@@ -168,6 +168,44 @@ function remainingBudgetMs(): number {
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+
+// ─── Supabase Health Probe ────────────────────────────────────────────────────
+// Set to true at startup if the Supabase health probe fails (or creds missing).
+// When true, all retryWithBackoff Supabase paths are skipped for the entire run,
+// converting per-company 636s worst-case overhead into a one-time 3s startup check.
+let USE_DIRECT_EDGAR_ONLY: boolean = !SUPABASE_URL || !SUPABASE_ANON_KEY;
+
+/**
+ * runSupabaseHealthProbe — one-time 3-second probe at script startup.
+ * If it fails or times out, sets USE_DIRECT_EDGAR_ONLY=true for the entire run.
+ * This converts per-company worst-case Supabase overhead (up to 636s across
+ * 4 retries) into a single 3s check at startup.
+ */
+async function runSupabaseHealthProbe(): Promise<void> {
+  if (USE_DIRECT_EDGAR_ONLY) {
+    log('ℹ️  Supabase probe skipped — no credentials, using direct EDGAR mode');
+    return;
+  }
+  log('🔍 Running Supabase health probe (3s timeout)...');
+  try {
+    const probeResult = await Promise.race([
+      callEdgeFunction<{ cik?: string; error?: string }>('fetch_sec_cik', { ticker: 'AAPL' }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Supabase health probe timed out after 3s')), 3000)
+      ),
+    ]);
+    if ((probeResult as { cik?: string }).cik) {
+      log('✅ Supabase health probe passed — using Supabase edge functions');
+    } else {
+      log('⚠️  Supabase probe returned no CIK — switching to direct EDGAR mode');
+      USE_DIRECT_EDGAR_ONLY = true;
+    }
+  } catch (e) {
+    log(`⚠️  Supabase health probe failed (${String(e)}) — switching to direct EDGAR mode for entire run`);
+    USE_DIRECT_EDGAR_ONLY = true;
+  }
+}
+
 
 // ─── CIK Map (sourced from secFilingParser.ts TICKER_TO_CIK_MAP) ─────────────
 
@@ -931,8 +969,8 @@ async function resolveCIK(ticker: string): Promise<{
     return { cik: TICKER_TO_CIK_MAP[baseTicker], source: 'hardcoded', durationMs: Date.now() - start };
   }
 
-  // Attempt EDGAR search via Supabase Edge Function (only if Supabase creds are available)
-  if (!IS_DRY_RUN && SUPABASE_URL && SUPABASE_ANON_KEY) {
+  // Attempt EDGAR search via Supabase Edge Function (only if health probe passed)
+  if (!IS_DRY_RUN && !USE_DIRECT_EDGAR_ONLY) {
     try {
       verbose(`  Calling fetch_sec_cik for ${ticker}...`);
       const result = await retryWithBackoff(
@@ -945,8 +983,8 @@ async function resolveCIK(ticker: string): Promise<{
     } catch (e) {
       verbose(`  CIK search failed for ${ticker}: ${String(e)}`);
     }
-  } else if (!IS_DRY_RUN && !SUPABASE_URL) {
-    verbose(`  Skipping fetch_sec_cik for ${ticker} — Supabase not available (no SUPABASE_URL)`);
+  } else if (!IS_DRY_RUN) {
+    verbose(`  Skipping fetch_sec_cik for ${ticker} — USE_DIRECT_EDGAR_ONLY=true`);
   }
 
   return { cik: null, source: 'not_found', durationMs: Date.now() - start };
@@ -971,8 +1009,8 @@ async function fetchFiling(cik: string, isADR: boolean): Promise<FilingResult> {
   const primaryFormType = isADR ? '20-F' : '10-K';
   const fallbackFormType = isADR ? '10-K' : '20-F';
 
-  // ── Path A: Try Supabase Edge Function (if credentials are available) ──────
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
+  // ── Path A: Try Supabase Edge Function (if health probe passed) ────────────
+  if (!USE_DIRECT_EDGAR_ONLY) {
     for (const formType of [primaryFormType, fallbackFormType]) {
       try {
         verbose(`  [Supabase] Fetching ${formType} for CIK ${cik}...`);
@@ -1008,7 +1046,7 @@ async function fetchFiling(cik: string, isADR: boolean): Promise<FilingResult> {
     }
     verbose(`  [Supabase] All form types failed — falling through to direct EDGAR`);
   } else {
-    verbose(`  [Supabase] Credentials not set — using direct EDGAR mode`);
+    verbose(`  [Supabase] USE_DIRECT_EDGAR_ONLY=true — skipping Supabase, using direct EDGAR`);
   }
 
   // ── Path B: Direct EDGAR fallback (no Supabase required) ──────────────────
@@ -2007,9 +2045,9 @@ async function parseNarrative(html: string, ticker: string): Promise<NarrativePa
   // LLM extraction — adds precision and context on top of local results
   for (const { text, sectionName } of calls) {
       // Skip remaining LLM calls if the global budget is nearly exhausted
-      // (keep 5 min buffer for in-flight companies to finish and flush)
-      if (remainingBudgetMs() < 5 * 60 * 1000) {
-        verbose(`  [Budget] Skipping LLM for ${ticker}/${sectionName} — budget nearly exhausted`);
+      // (keep 15 min buffer for in-flight companies to finish and flush)
+      if (remainingBudgetMs() < 15 * 60 * 1000) {
+        verbose(`  [Budget] Skipping LLM for ${ticker}/${sectionName} — budget nearly exhausted (< 15 min remaining)`);
         break;
       }
     if (text.length < 200) continue;
@@ -2340,7 +2378,20 @@ function getCompanyMeta(ticker: string): CompanyMeta {
 // Wraps processCompany in a Promise.race with a hard per-company deadline.
 // Default: 8 minutes per company (covers worst-case 4-retry EDGAR fetch +
 // 8-section LLM narrative with retries).
-const PER_COMPANY_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes
+//
+// computePerCompanyTimeoutMs — dynamic budget allocation
+// Formula: (SCRIPT_BUDGET_MS × CONCURRENCY) / total_tickers
+// Floor: 90s  |  Ceiling: 8 minutes
+function computePerCompanyTimeoutMs(totalTickers: number): number {
+  if (totalTickers <= 0) return 8 * 60 * 1000;
+  const dynamic = Math.floor((SCRIPT_BUDGET_MS * CONCURRENCY) / totalTickers);
+  const floor   = 90 * 1000;        //  90 seconds minimum
+  const ceiling = 8 * 60 * 1000;    //   8 minutes maximum
+  return Math.min(ceiling, Math.max(floor, dynamic));
+}
+
+// Will be overridden in main() once total ticker count is known
+let PER_COMPANY_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes default
 
 async function processCompanyWithTimeout(
   ticker: string,
@@ -2482,8 +2533,11 @@ async function processCompany(
       return result;
     }
 
-    // Rate limit: 1 second between EDGAR requests
-    await sleep(1000);
+    // Rate limit: 1 second between EDGAR requests — only for Cat B/C companies
+    // whose CIK was resolved via EDGAR search (not needed for hardcoded Cat A CIKs)
+    if (result.cikSource === 'edgar_search') {
+      await sleep(1000);
+    }
 
     // ── Step 2: Filing Retrieval ────────────────────────────────────────────
     const filing = await fetchFiling(result.cik!, meta.isADR);
@@ -2781,6 +2835,21 @@ function flushPartialResults(
     warn('No results to flush - exiting without writing files');
     return;
   }
+
+  // Mark any results interrupted mid-pipeline as partial so consumers know
+  // their data is incomplete but still usable for completed pipeline fields.
+  let markedPartial = 0;
+  for (const r of allResults) {
+    if (r.enteredSECPath && r.retrievalSucceeded && !r.structuredParsingSucceeded && !r.errorMessage) {
+      (r as BaselineResult & { isPartial?: boolean }).isPartial = true;
+      r.errorMessage = 'Processing interrupted by budget shutdown';
+      markedPartial++;
+    }
+  }
+  if (markedPartial > 0) {
+    log(`   Marked ${markedPartial} in-flight result(s) as partial (interrupted mid-pipeline)`);
+  }
+
   const endTime = new Date().toISOString();
   const durationMs = Date.now() - startMs;
   const summary = {
@@ -2839,6 +2908,8 @@ async function main(): Promise<void> {
     log('');
   } else if (!IS_DRY_RUN) {
     log(`✅ Supabase URL: ${SUPABASE_URL.slice(0, 30)}...`);
+    // Run one-time health probe — sets USE_DIRECT_EDGAR_ONLY if Supabase is unreachable
+    await runSupabaseHealthProbe();
   }
 
   let tickers: string[];
@@ -2868,7 +2939,10 @@ async function main(): Promise<void> {
   tickers = [...new Set(tickers)];
   const total = tickers.length;
 
+  // Set dynamic per-company timeout now that we know total ticker count
+  PER_COMPANY_TIMEOUT_MS = computePerCompanyTimeoutMs(total);
   log(`\nTotal tickers to process: ${total}`);
+  log(`Per-company timeout: ${Math.round(PER_COMPANY_TIMEOUT_MS / 1000)}s (budget=${Math.round(SCRIPT_BUDGET_MS/60000)}min × concurrency=${CONCURRENCY} / ${total} tickers)`);
 
   if (IS_DRY_RUN) {
     log('\n─── Dry Run — Ticker List ───────────────────────────────────────');
@@ -2918,12 +2992,17 @@ async function main(): Promise<void> {
     log(`   Remaining budget: ${Math.round(remainingBudgetMs() / 1000)}s`);
     // Reject all queued (not yet started) semaphore waiters immediately
     semaphore.abortAll('Budget exceeded — aborting queued tasks');
-    // Force-flush after 30s regardless (don't use .unref() — we MUST flush)
+    // Cap each in-flight company's remaining per-company time to 60s so they
+    // finish their current section quickly rather than running up to 8 more min.
+    PER_COMPANY_TIMEOUT_MS = Math.min(PER_COMPANY_TIMEOUT_MS, 60_000);
+    log(`   In-flight company cap set to 60s — force-flush in 90s`);
+    // Force-flush after 90s (extended from 30s to give in-flight companies
+    // time to finish within the 60s cap before we force-exit)
     setTimeout(() => {
       log('   Force-flush timeout reached — writing whatever is available now.');
       flushPartialResults(previousResults, newResults, PHASE, runId, startTime, startMs);
       process.exit(0);
-    }, 30_000);
+    }, 90_000);
   };
 
   process.once('SIGTERM', () => triggerGracefulShutdown('SIGTERM received'));
