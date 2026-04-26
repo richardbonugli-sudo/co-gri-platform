@@ -45,8 +45,8 @@ on:
         default: 'A'
         type: choice
         options:
-          - 'A'        # Cat A only - 41 hardcoded pilot companies
-          - 'A+B'      # Cat A + B - ~55 companies (adds EDGAR-searched)
+          - 'A'        # Cat A only - 138 hardcoded companies
+          - 'A+B'      # Cat A + B - ~180 companies (adds EDGAR-searched)
           - 'A+B+C'    # All SEC-eligible companies
           - 'full'     # Alias for A+B+C
       ticker:
@@ -186,20 +186,20 @@ jobs:
           CATEGORY="${{ github.event.inputs.category }}"
           case "$CATEGORY" in
             "A")
-              FLAGS="$FLAGS --phase=1"
-              echo "Category A - 41 pilot companies (phase=1)"
+              FLAGS="$FLAGS --phase=1 --concurrency=5"
+              echo "Category A - 138 companies (phase=1, concurrency=5)"
               ;;
             "A+B")
-              FLAGS="$FLAGS --phase=2"
-              echo "Category A+B - ~55 companies (phase=2)"
+              FLAGS="$FLAGS --phase=2 --concurrency=5"
+              echo "Category A+B - ~180 companies (phase=2, concurrency=5)"
               ;;
             "A+B+C"|"full")
-              FLAGS="$FLAGS --phase=3"
-              echo "Category A+B+C / full - all SEC-eligible companies (phase=3)"
+              FLAGS="$FLAGS --phase=3 --concurrency=5"
+              echo "Category A+B+C / full - all SEC-eligible companies (phase=3, concurrency=5)"
               ;;
             *)
-              FLAGS="$FLAGS --phase=1"
-              echo "Unknown category '$CATEGORY', defaulting to phase=1 (Cat A)"
+              FLAGS="$FLAGS --phase=1 --concurrency=5"
+              echo "Unknown category '$CATEGORY', defaulting to phase=1 (Cat A, concurrency=5)"
               ;;
           esac
 
