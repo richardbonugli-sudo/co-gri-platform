@@ -140,7 +140,7 @@ function globalToCombined(r: GlobalBaselineResult): CombinedBaselineEntry {
   return {
     source: 'Global',
     ticker: r.ticker,
-    displayName: r.name,
+    displayName: r.name ?? (r as any).companyName ?? r.ticker,
     exchange: r.exchange,
     country: r.country ?? '',
     compositeConfidenceScore: r.compositeConfidenceScore ?? 0,

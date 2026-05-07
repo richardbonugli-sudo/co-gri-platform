@@ -272,7 +272,9 @@ export type GlobalFilingSource =
 export interface GlobalBaselineResult {
   // ── Identity ──────────────────────────────────────────────────────────────
   ticker: string;
-  name: string;
+  /** Display name — JSON output uses 'companyName'; both are accepted. */
+  name?: string;
+  companyName?: string;
   exchange: string;
   country: string;
   yahooTicker: string;
@@ -306,17 +308,18 @@ export interface GlobalBaselineResult {
   /** Total assets in USD. */
   totalAssetsUSD?: number;
   /** Reporting currency code (e.g. 'HKD', 'BRL', 'GBP', 'SGD', 'TWD', 'CAD'). */
-  currency: string;
+  currency?: string;
   /** FX rate used to convert local currency amounts to USD (1 local = fxRateToUSD USD). */
-  fxRateToUSD: number;
+  fxRateToUSD?: number;
 
   // ── Filing metadata ───────────────────────────────────────────────────────
   /** Which data source provided the annual report / financial data. */
-  filingSource: GlobalFilingSource;
+  filingSource?: GlobalFilingSource;
   /** Direct URL to the filing document, if available. */
   filingUrl?: string;
-  /** ISO 8601 timestamp of when this result was produced. */
-  runDate: string;
+  /** ISO 8601 timestamp of when this result was produced. JSON output uses 'timestamp'. */
+  runDate?: string;
+  timestamp?: string;
 
   // ── Error handling ────────────────────────────────────────────────────────
   /** Error message if any pipeline step failed; null on full success. */

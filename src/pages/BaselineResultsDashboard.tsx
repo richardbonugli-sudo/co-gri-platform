@@ -543,7 +543,7 @@ const GLOBAL_CSV_COLUMNS = [
 
 function buildGlobalCSVRow(r: GlobalBaselineResult): string {
   const fieldMap: Record<string, unknown> = {
-    ticker: r.ticker, name: r.name, exchange: r.exchange, country: r.country,
+    ticker: r.ticker, name: r.name ?? (r as any).companyName ?? r.ticker, exchange: r.exchange, country: r.country,
     yahooTicker: r.yahooTicker, companyType: r.companyType,
     enteredDataPath: r.enteredDataPath, filingFetched: r.filingFetched,
     structuredDataFound: r.structuredDataFound,
@@ -552,8 +552,8 @@ function buildGlobalCSVRow(r: GlobalBaselineResult): string {
     compositeConfidenceScore: r.compositeConfidenceScore,
     currency: r.currency, fxRateToUSD: r.fxRateToUSD,
     revenueUSD: r.revenueUSD ?? '', totalAssetsUSD: r.totalAssetsUSD ?? '',
-    filingSource: r.filingSource, filingUrl: r.filingUrl ?? '',
-    runDate: r.runDate, errorMessage: r.errorMessage ?? '',
+    filingSource: r.filingSource ?? '', filingUrl: r.filingUrl ?? '',
+    runDate: r.runDate ?? (r as any).timestamp ?? '', errorMessage: r.errorMessage ?? '',
     navPerUnit: r.navPerUnit ?? '', physicalHoldings: r.physicalHoldings ?? '',
     custodianLocation: r.custodianLocation ?? '',
   };
@@ -607,6 +607,17 @@ const GlobalBaselineTab: React.FC = () => {
       const data: GlobalRunSummary = await res.json();
       // Detect stub file: _notYetRun marker OR runId is empty with no results
       const isStub = (data as any)._notYetRun === true || ((!data.runId || data.runId === '') && Array.isArray(data.results) && data.results.length === 0 && data.totalCompanies === 0);
+      // Normalise field names: JSON uses companyName/timestamp; type expects name/runDate
+      if (!isStub && data.results) {
+        data.results = data.results.map((r: any) => ({
+          ...r,
+          name: r.name ?? r.companyName ?? r.ticker,
+          runDate: r.runDate ?? r.timestamp ?? null,
+          filingSource: r.filingSource ?? r.dataSource ?? 'FMP',
+          currency: r.currency ?? '',
+          fxRateToUSD: r.fxRateToUSD ?? 1,
+        }));
+      }
       if (isStub) {
         setGlobalSummary(null);
         setError('STUB_FILE');
