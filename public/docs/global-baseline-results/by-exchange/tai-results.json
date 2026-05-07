@@ -12,12 +12,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 161,
+      "dataSourceMs": 124,
       "filingFetched": true,
       "filingType": "annual_report_html",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 176,
-      "retrievalMs": 1875,
+      "retrievalMs": 2319,
       "retrievalError": null,
       "structuredDataFound": false,
       "revenueDataFound": false,
@@ -30,7 +30,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 1404,
+      "narrativeParsingMs": 1364,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -44,9 +44,9 @@
       "compositeConfidenceScore": 26,
       "confidenceGrade": "F",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 3440,
+      "totalPipelineMs": 3807,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:08:28.714Z"
+      "timestamp": "2026-05-07T17:39:53.910Z"
     },
     {
       "ticker": "2609",
@@ -59,12 +59,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 160,
+      "dataSourceMs": 124,
       "filingFetched": true,
       "filingType": "annual_report_html",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 172,
-      "retrievalMs": 1680,
+      "retrievalMs": 2386,
       "retrievalError": null,
       "structuredDataFound": false,
       "revenueDataFound": false,
@@ -77,7 +77,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 1231,
+      "narrativeParsingMs": 1349,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -91,9 +91,9 @@
       "compositeConfidenceScore": 26,
       "confidenceGrade": "F",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 3071,
+      "totalPipelineMs": 3859,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:08:29.560Z"
+      "timestamp": "2026-05-07T17:39:54.620Z"
     }
   ]
 }

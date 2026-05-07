@@ -12,19 +12,19 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "adr_reuse",
-      "dataSourceMs": 350,
+      "dataSourceMs": 293,
       "filingFetched": true,
       "filingType": "adr_reuse",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 100,
-      "retrievalMs": 2,
+      "retrievalMs": 1,
       "retrievalError": null,
       "structuredDataFound": true,
       "revenueDataFound": false,
       "ppeDataFound": false,
       "debtDataFound": false,
       "geographicSegmentsFound": true,
-      "structuredDataMs": 0,
+      "structuredDataMs": 1,
       "narrativeParsingSucceeded": false,
       "narrativeCountriesFound": 0,
       "narrativeSupplyCountriesFound": 0,
@@ -44,9 +44,9 @@
       "compositeConfidenceScore": 52,
       "confidenceGrade": "C",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 353,
+      "totalPipelineMs": 295,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:08:17.269Z"
+      "timestamp": "2026-05-07T17:39:41.681Z"
     },
     {
       "ticker": "VALE3",
@@ -59,12 +59,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "adr_reuse",
-      "dataSourceMs": 159,
+      "dataSourceMs": 123,
       "filingFetched": true,
       "filingType": "adr_reuse",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 100,
-      "retrievalMs": 2,
+      "retrievalMs": 1,
       "retrievalError": null,
       "structuredDataFound": true,
       "revenueDataFound": false,
@@ -91,9 +91,9 @@
       "compositeConfidenceScore": 52,
       "confidenceGrade": "C",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 161,
+      "totalPipelineMs": 124,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:08:17.622Z"
+      "timestamp": "2026-05-07T17:39:41.976Z"
     },
     {
       "ticker": "CMIG3",
@@ -106,12 +106,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 363,
+      "dataSourceMs": 306,
       "filingFetched": true,
       "filingType": "dfp_xml",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 1010,
-      "retrievalMs": 784,
+      "retrievalMs": 661,
       "retrievalError": null,
       "structuredDataFound": false,
       "revenueDataFound": false,
@@ -124,7 +124,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 1732,
+      "narrativeParsingMs": 2638,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -138,9 +138,9 @@
       "compositeConfidenceScore": 26,
       "confidenceGrade": "F",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 2880,
+      "totalPipelineMs": 3605,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:08:17.269Z"
+      "timestamp": "2026-05-07T17:39:41.681Z"
     },
     {
       "ticker": "RECV3",
@@ -153,12 +153,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 362,
+      "dataSourceMs": 318,
       "filingFetched": true,
       "filingType": "dfp_xml",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 1010,
-      "retrievalMs": 783,
+      "retrievalMs": 645,
       "retrievalError": null,
       "structuredDataFound": false,
       "revenueDataFound": false,
@@ -171,7 +171,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 2011,
+      "narrativeParsingMs": 3509,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -185,9 +185,9 @@
       "compositeConfidenceScore": 26,
       "confidenceGrade": "F",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 3157,
+      "totalPipelineMs": 4472,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:08:17.269Z"
+      "timestamp": "2026-05-07T17:39:41.681Z"
     }
   ]
 }

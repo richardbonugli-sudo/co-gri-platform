@@ -1,7 +1,7 @@
 # Global Baseline Results
 
-**Run ID:** 2026-05-07T17-08-17-267Z
-**Run date:** 2026-05-07T17:08:17.267Z
+**Run ID:** 2026-05-07T17-39-41-677Z
+**Run date:** 2026-05-07T17:39:41.677Z
 **Exchange filter:** ALL
 **Companies processed:** 30 / 30
 **Duration:** 0m 17s
@@ -64,29 +64,29 @@
 | 517 | HKG | China | ✅ | ❌ | N/A | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 0 | F |  |
 | 857 | HKG | China | ✅ | ❌ | N/A | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 0 | F |  |
 | CMIG3 | BVMF | Brazil | ✅ | ✅ | dfp_xml | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
-| RECV3 | BVMF | Brazil | ✅ | ✅ | dfp_xml | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | 1919 | HKG | China | ✅ | ❌ | N/A | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 0 | F |  |
 | 2386 | HKG | China | ✅ | ❌ | N/A | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 0 | F |  |
+| RECV3 | BVMF | Brazil | ✅ | ✅ | dfp_xml | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
+| SOL | JSE | South Africa | ✅ | ✅ | annual_report_html | ❌ | ✅ | 3 | FALLBACK/FALLBACK/MODELED/MODELED | ❌ | 31 | D |  |
 | SSW | JSE | South Africa | ✅ | ✅ | annual_report_html | ❌ | ✅ | 3 | FALLBACK/FALLBACK/MODELED/MODELED | ❌ | 31 | D |  |
-| GLEN | LSE | United Kingdom | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | RIO.L | LSE | United Kingdom | ✅ | ✅ | adr_reuse | ✅ | ❌ | 0 | DIRECT/FALLBACK/FALLBACK/FALLBACK | ✅ | 52 | C |  |
 | HSBK (gdr) | LSE | Kazakhstan | ✅ | ❌ | N/A | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 0 | F |  |
-| SOL | JSE | South Africa | ✅ | ✅ | annual_report_html | ❌ | ✅ | 3 | FALLBACK/FALLBACK/MODELED/MODELED | ❌ | 31 | D |  |
+| GLEN | LSE | United Kingdom | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | SHEL.L | LSE | United Kingdom | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | A7RU | SGX | Singapore | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
-| F34 | SGX | Singapore | ✅ | ✅ | annual_report_html | ❌ | ✅ | 2 | FALLBACK/FALLBACK/MODELED/MODELED | ❌ | 31 | D |  |
 | J36 | SGX | Singapore | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
+| F34 | SGX | Singapore | ✅ | ✅ | annual_report_html | ❌ | ✅ | 2 | FALLBACK/FALLBACK/MODELED/MODELED | ❌ | 31 | D |  |
 | NS8U | SGX | Singapore | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | P8Z | SGX | Singapore | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | TPED | SGX | Thailand | ✅ | ✅ | annual_report_html | ❌ | ✅ | 2 | FALLBACK/FALLBACK/MODELED/MODELED | ❌ | 31 | D |  |
 | PHYS (commodity_trust) | TSE | Canada | ✅ | ✅ | nav_data | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 30 | D |  |
-| 2603 | TAI | Taiwan | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
-| 2609 | TAI | Taiwan | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
-| PSLV (commodity_trust) | TSE | Canada | ✅ | ✅ | nav_data | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 30 | D |  |
 | POU | TSE | Canada | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
+| 2603 | TAI | Taiwan | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
+| PSLV (commodity_trust) | TSE | Canada | ✅ | ✅ | nav_data | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 30 | D |  |
 | SPPP (commodity_trust) | TSE | Canada | ✅ | ✅ | nav_data | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 30 | D |  |
-| PXT | TSE | Canada | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
+| 2609 | TAI | Taiwan | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 | U.UN (commodity_trust) | TSE | Canada | ✅ | ✅ | nav_data | ❌ | ❌ | 0 | FALLBACK/FALLBACK/FALLBACK/FALLBACK | ❌ | 30 | D |  |
+| PXT | TSE | Canada | ✅ | ✅ | annual_report_html | ❌ | ✅ | 1 | FALLBACK/FALLBACK/MODELED/FALLBACK | ❌ | 26 | F |  |
 
 ---
 
