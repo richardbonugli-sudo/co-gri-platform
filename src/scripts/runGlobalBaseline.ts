@@ -77,6 +77,8 @@ const OUTPUT_DIR = path.join(DOCS_DIR, 'global-baseline-results');
 const BY_EXCHANGE_DIR = path.join(OUTPUT_DIR, 'by-exchange');
 const CHECKPOINT_FILE = path.join(OUTPUT_DIR, 'checkpoint.json');
 const LATEST_FILE = path.join(OUTPUT_DIR, 'latest.json');
+const PUBLIC_OUTPUT_DIR = path.join(PROJECT_ROOT, 'public', 'docs', 'global-baseline-results');
+const PUBLIC_LATEST_FILE = path.join(PUBLIC_OUTPUT_DIR, 'latest.json');
 const SUMMARY_FILE = path.join(OUTPUT_DIR, 'latest-summary.md');
 
 // ─── CLI Flags ────────────────────────────────────────────────────────────────
@@ -1882,6 +1884,8 @@ function flushPartialResults(
     const partialFile = path.join(OUTPUT_DIR, `baseline-${isoStamp}.json`);
     fs.writeFileSync(partialFile, JSON.stringify(summary, null, 2), 'utf-8');
     fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+    fs.mkdirSync(PUBLIC_OUTPUT_DIR, { recursive: true });
+    fs.writeFileSync(PUBLIC_LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
     const summaryMd = generateSummaryReport(summary as RunSummary);
     fs.writeFileSync(SUMMARY_FILE, summaryMd, 'utf-8');
     writeByExchangeResults(allResults);
@@ -2077,6 +2081,8 @@ async function main(): Promise<void> {
   log(`\n✅ Timestamped results written to: ${RESULTS_FILE}`);
 
   fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+  fs.mkdirSync(PUBLIC_OUTPUT_DIR, { recursive: true });
+  fs.writeFileSync(PUBLIC_LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
   log(`✅ Latest results written to:     ${LATEST_FILE}`);
 
   const summaryMd = generateSummaryReport(summary);

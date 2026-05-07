@@ -605,9 +605,8 @@ const GlobalBaselineTab: React.FC = () => {
       const res = await fetch('/docs/global-baseline-results/latest.json', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: GlobalRunSummary = await res.json();
-      // Detect stub file: runId is empty string and results array is empty
-      // This means the workflow ran but the script produced no output (likely missing secrets)
-      const isStub = (!data.runId || data.runId === '') && Array.isArray(data.results) && data.results.length === 0 && data.totalCompanies === 0;
+      // Detect stub file: _notYetRun marker OR runId is empty with no results
+      const isStub = (data as any)._notYetRun === true || ((!data.runId || data.runId === '') && Array.isArray(data.results) && data.results.length === 0 && data.totalCompanies === 0);
       if (isStub) {
         setGlobalSummary(null);
         setError('STUB_FILE');
