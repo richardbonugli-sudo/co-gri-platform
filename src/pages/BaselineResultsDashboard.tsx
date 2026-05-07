@@ -1645,16 +1645,43 @@ const CombinedBaselineTab: React.FC = () => {
   }
 
   if (!data || data.combinedTotal === 0) {
+    const isInProgress = data?.globalIsStub && data?.globalStubReason === 'in_progress';
+    const isNotYetRun = !data || (data.globalIsStub && data.globalStubReason === 'not_yet_run');
+
     return (
       <Card className="bg-slate-900 border-slate-700">
         <CardContent className="py-10 flex flex-col items-center gap-4 text-center">
-          <Layers className="h-10 w-10 text-slate-500" />
+          {isInProgress ? (
+            <RefreshCw className="h-10 w-10 text-amber-400 animate-spin" />
+          ) : (
+            <Layers className="h-10 w-10 text-slate-500" />
+          )}
           <div>
-            <p className="text-white font-semibold text-lg mb-1">No Combined Data Available</p>
-            <p className="text-slate-400 text-sm max-w-lg">
-              Run both the SEC Baseline and Global Baseline GitHub Actions workflows to populate
-              the combined 211-company view.
-            </p>
+            {isInProgress ? (
+              <>
+                <p className="text-white font-semibold text-lg mb-1">Global Baseline Run In Progress</p>
+                <p className="text-slate-400 text-sm max-w-lg">
+                  The Global Baseline workflow is currently running. Results will appear here once
+                  the run completes. Refresh this page in a few minutes to check for updates.
+                </p>
+              </>
+            ) : isNotYetRun ? (
+              <>
+                <p className="text-white font-semibold text-lg mb-1">No Combined Data Available</p>
+                <p className="text-slate-400 text-sm max-w-lg">
+                  Run both the SEC Baseline and Global Baseline GitHub Actions workflows to populate
+                  the combined 211-company view.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-white font-semibold text-lg mb-1">No Combined Data Available</p>
+                <p className="text-slate-400 text-sm max-w-lg">
+                  Run both the SEC Baseline and Global Baseline GitHub Actions workflows to populate
+                  the combined 211-company view.
+                </p>
+              </>
+            )}
           </div>
           {(data?.secError || data?.globalError) && (
             <div className="w-full max-w-lg space-y-2 text-left">
@@ -1676,7 +1703,7 @@ const CombinedBaselineTab: React.FC = () => {
             onClick={load}
             className="border-slate-600 text-slate-300 hover:text-white"
           >
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Retry
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> {isInProgress ? 'Check Again' : 'Retry'}
           </Button>
         </CardContent>
       </Card>
@@ -1696,6 +1723,18 @@ const CombinedBaselineTab: React.FC = () => {
         <div className="bg-amber-950/40 border border-amber-800 rounded-lg px-4 py-2 flex items-start gap-2 text-xs text-amber-400">
           <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
           <span><strong>Global data error:</strong> {data.globalError}</span>
+        </div>
+      )}
+      {data.globalIsStub && data.globalStubReason === 'in_progress' && (
+        <div className="bg-amber-950/40 border border-amber-700 rounded-lg px-4 py-2 flex items-start gap-2 text-xs text-amber-300">
+          <RefreshCw className="h-3.5 w-3.5 mt-0.5 shrink-0 animate-spin" />
+          <span><strong>Global Baseline run in progress.</strong> Results shown here are SEC-only until the global run completes.</span>
+        </div>
+      )}
+      {data.globalIsStub && data.globalStubReason === 'not_yet_run' && (
+        <div className="bg-slate-800/60 border border-slate-700 rounded-lg px-4 py-2 flex items-start gap-2 text-xs text-slate-400">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span>Global Baseline has not been run yet. Trigger the <strong>run-global-baseline</strong> GitHub Actions workflow to populate global data.</span>
         </div>
       )}
 

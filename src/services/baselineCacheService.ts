@@ -111,6 +111,10 @@ export interface CombinedLoadResult {
   secRunId: string | null;
   globalRunId: string | null;
   loadedAt: string;
+  /** True when the global latest.json is a stub (not-yet-run or in-progress). */
+  globalIsStub: boolean;
+  /** Human-readable reason for the stub state, or null if not a stub. */
+  globalStubReason: string | null;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -182,20 +186,33 @@ export async function loadCombinedBaseline(): Promise<CombinedLoadResult> {
   let globalEntries: CombinedBaselineEntry[] = [];
   let globalError: string | null = null;
   let globalRunId: string | null = null;
+  let globalIsStub = false;
+  let globalStubReason: string | null = null;
 
   try {
     const globalRes = await fetch('/docs/global-baseline-results/latest.json', { cache: 'no-store' });
     if (!globalRes.ok) {
       if (globalRes.status === 404) {
-        // Not yet run — treat as empty, not an error
-        globalError = null;
+        // Not yet run — treat as stub, not an error
+        globalIsStub = true;
+        globalStubReason = 'not_yet_run';
       } else {
         throw new Error(`HTTP ${globalRes.status} fetching Global baseline`);
       }
     } else {
-      const globalData: GlobalRunSummary = await globalRes.json();
+      const globalData: GlobalRunSummary & {
+        _notYetRun?: boolean;
+        _inProgress?: boolean;
+      } = await globalRes.json();
       globalRunId = globalData.runId ?? null;
-      if (Array.isArray(globalData.results) && globalData.results.length > 0) {
+
+      if (globalData._notYetRun) {
+        globalIsStub = true;
+        globalStubReason = 'not_yet_run';
+      } else if (globalData._inProgress) {
+        globalIsStub = true;
+        globalStubReason = 'in_progress';
+      } else if (Array.isArray(globalData.results) && globalData.results.length > 0) {
         globalEntries = globalData.results.map(globalToCombined);
       }
     }
@@ -216,5 +233,7 @@ export async function loadCombinedBaseline(): Promise<CombinedLoadResult> {
     secRunId,
     globalRunId,
     loadedAt,
+    globalIsStub,
+    globalStubReason,
   };
 }

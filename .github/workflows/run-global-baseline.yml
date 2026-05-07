@@ -298,67 +298,133 @@ jobs:
         if: always()
         run: |
           mkdir -p docs/global-baseline-results
+          mkdir -p public/docs/global-baseline-results
 
           SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
           if [ "$SCRIPT_STATUS" = "partial" ]; then
             echo "NOTE: Script was stopped by time-budget watchdog - checking for partial results"
           fi
 
-          # Primary check: latest.json exists and has real content (> 100 bytes means script wrote it)
-          LATEST_SIZE=0
+          # Primary check: docs/global-baseline-results/latest.json exists with real results
+          # A stub file (_notYetRun) is < 400 bytes; a real result file is always larger.
+          DOCS_LATEST_SIZE=0
           if [ -f docs/global-baseline-results/latest.json ]; then
-            LATEST_SIZE=$(wc -c < docs/global-baseline-results/latest.json)
+            DOCS_LATEST_SIZE=$(wc -c < docs/global-baseline-results/latest.json)
+            echo "docs/global-baseline-results/latest.json: ${DOCS_LATEST_SIZE} bytes"
+          else
+            echo "docs/global-baseline-results/latest.json: NOT FOUND"
           fi
 
-          if [ "$LATEST_SIZE" -gt "100" ]; then
+          # Also check public/docs mirror
+          PUBLIC_LATEST_SIZE=0
+          if [ -f public/docs/global-baseline-results/latest.json ]; then
+            PUBLIC_LATEST_SIZE=$(wc -c < public/docs/global-baseline-results/latest.json)
+            echo "public/docs/global-baseline-results/latest.json: ${PUBLIC_LATEST_SIZE} bytes"
+          else
+            echo "public/docs/global-baseline-results/latest.json: NOT FOUND"
+          fi
+
+          # Determine if we have real (non-stub) results: > 400 bytes means real data
+          REAL_SIZE=$DOCS_LATEST_SIZE
+          if [ "$PUBLIC_LATEST_SIZE" -gt "$REAL_SIZE" ]; then
+            REAL_SIZE=$PUBLIC_LATEST_SIZE
+          fi
+
+          if [ "$REAL_SIZE" -gt "400" ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "latest.json found with ${LATEST_SIZE} bytes - marking as changed"
-          elif git diff --quiet -- docs/global-baseline-results/ 2>/dev/null; then
-            UNTRACKED=$(git ls-files --others --exclude-standard docs/global-baseline-results/ | wc -l)
-            if [ "$UNTRACKED" -gt "0" ]; then
+            echo "Real results detected (${REAL_SIZE} bytes) - marking as changed"
+          else
+            # Fall back to git diff covering BOTH docs/ and public/docs/
+            DOCS_DIFF=false
+            PUBLIC_DIFF=false
+            if ! git diff --quiet -- docs/global-baseline-results/ 2>/dev/null; then
+              DOCS_DIFF=true
+            fi
+            if ! git diff --quiet -- public/docs/global-baseline-results/ 2>/dev/null; then
+              PUBLIC_DIFF=true
+            fi
+            UNTRACKED_DOCS=$(git ls-files --others --exclude-standard docs/global-baseline-results/ 2>/dev/null | wc -l)
+            UNTRACKED_PUBLIC=$(git ls-files --others --exclude-standard public/docs/global-baseline-results/ 2>/dev/null | wc -l)
+
+            if [ "$DOCS_DIFF" = "true" ] || [ "$PUBLIC_DIFF" = "true" ] || [ "$UNTRACKED_DOCS" -gt "0" ] || [ "$UNTRACKED_PUBLIC" -gt "0" ]; then
               echo "changed=true" >> $GITHUB_OUTPUT
-              echo "New global-baseline-results files detected ($UNTRACKED untracked files)"
+              echo "Git diff/untracked changes detected (docs_diff=$DOCS_DIFF public_diff=$PUBLIC_DIFF untracked_docs=$UNTRACKED_DOCS untracked_public=$UNTRACKED_PUBLIC)"
+              git diff --stat -- docs/global-baseline-results/ public/docs/global-baseline-results/ || true
             else
               echo "changed=false" >> $GITHUB_OUTPUT
-              echo "No changes detected in docs/global-baseline-results/ and no latest.json with content"
+              echo "No changes detected in docs/ or public/docs/ global-baseline-results"
             fi
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-            echo "Changes detected in docs/global-baseline-results/"
-            git diff --stat -- docs/global-baseline-results/ || true
           fi
 
           echo ""
-          echo "Files in docs/global-baseline-results/:"
+          echo "=== docs/global-baseline-results/ ==="
           ls -lah docs/global-baseline-results/ || echo "(directory empty or missing)"
           echo ""
-          echo "Files in docs/global-baseline-results/by-exchange/:"
+          echo "=== docs/global-baseline-results/by-exchange/ ==="
           ls -lah docs/global-baseline-results/by-exchange/ || echo "(directory empty or missing)"
+          echo ""
+          echo "=== public/docs/global-baseline-results/ ==="
+          ls -lah public/docs/global-baseline-results/ || echo "(directory empty or missing)"
 
       # -- Step 8: Copy results to public folder (for Vite static serving) ---
       - name: Copy results to public folder
-        # Always run so partial results are also served statically
-        # Copy whenever latest.json exists - do not gate on check_changes to avoid stub blocking real results
+        # Always run so partial results are also served statically.
+        # Only copy when docs/latest.json is a real result file (> 400 bytes).
+        # This prevents the stub file from overwriting a previously committed real result.
         if: always() && github.event.inputs.dry_run != 'true'
         run: |
           mkdir -p public/docs/global-baseline-results/by-exchange
-          if [ -f docs/global-baseline-results/latest.json ]; then
-            cp docs/global-baseline-results/latest.json public/docs/global-baseline-results/latest.json
-            echo "Copied latest.json to public/docs/global-baseline-results/"
+
+          DOCS_LATEST="docs/global-baseline-results/latest.json"
+          PUBLIC_LATEST="public/docs/global-baseline-results/latest.json"
+
+          if [ -f "$DOCS_LATEST" ]; then
+            DOCS_SIZE=$(wc -c < "$DOCS_LATEST")
+            echo "docs latest.json size: ${DOCS_SIZE} bytes"
+            if [ "$DOCS_SIZE" -gt "400" ]; then
+              cp "$DOCS_LATEST" "$PUBLIC_LATEST"
+              echo "✅ Copied real results (${DOCS_SIZE} bytes) to $PUBLIC_LATEST"
+            else
+              echo "⚠️  docs/latest.json is a stub (${DOCS_SIZE} bytes) — NOT copying to public/ to preserve any existing real results"
+              # If public also has no real results, write the stub so the UI shows the correct state
+              if [ ! -f "$PUBLIC_LATEST" ]; then
+                cp "$DOCS_LATEST" "$PUBLIC_LATEST"
+                echo "   (wrote stub to public/ since no file existed there)"
+              else
+                PUBLIC_SIZE=$(wc -c < "$PUBLIC_LATEST")
+                if [ "$PUBLIC_SIZE" -le "400" ]; then
+                  cp "$DOCS_LATEST" "$PUBLIC_LATEST"
+                  echo "   (updated stub in public/ — both are stubs)"
+                fi
+              fi
+            fi
           else
             echo "docs/global-baseline-results/latest.json not found - skipping copy"
           fi
+
           if [ -f docs/global-baseline-results/latest-summary.md ]; then
             cp docs/global-baseline-results/latest-summary.md public/docs/global-baseline-results/latest-summary.md
             echo "Copied latest-summary.md to public/docs/global-baseline-results/"
           fi
-          # Copy per-exchange results
+
+          # Copy per-exchange results (only real files, not stubs)
+          EXCHANGE_COPIED=0
           for f in docs/global-baseline-results/by-exchange/*.json; do
             if [ -f "$f" ]; then
-              cp "$f" public/docs/global-baseline-results/by-exchange/
-              echo "Copied $(basename $f) to public/docs/global-baseline-results/by-exchange/"
+              FSIZE=$(wc -c < "$f")
+              if [ "$FSIZE" -gt "50" ]; then
+                cp "$f" public/docs/global-baseline-results/by-exchange/
+                echo "Copied $(basename $f) (${FSIZE} bytes) to public/docs/global-baseline-results/by-exchange/"
+                EXCHANGE_COPIED=$((EXCHANGE_COPIED + 1))
+              fi
             fi
           done
+          echo "Exchange files copied: $EXCHANGE_COPIED"
+
+          echo ""
+          echo "=== Final public/docs/global-baseline-results/ ==="
+          ls -lah public/docs/global-baseline-results/ || true
+          ls -lah public/docs/global-baseline-results/by-exchange/ || true
 
       # -- Step 9: Commit and push results (always - captures partial results)
       - name: Commit and push results
@@ -376,8 +442,16 @@ jobs:
             git merge --no-edit origin/HEAD || true
           fi
 
+          # Stage docs/ results (always tracked)
           git add docs/global-baseline-results/ || true
-          git add public/docs/global-baseline-results/ || true
+
+          # Stage public/docs/ results using -f (force) to bypass any .gitignore rules
+          # The public/docs/global-baseline-results/ directory must be committed so Vite
+          # can serve the file at /docs/global-baseline-results/latest.json at runtime.
+          git add -f public/docs/global-baseline-results/ || true
+
+          echo "=== Staged files ==="
+          git diff --cached --stat || true
 
           if git diff --cached --quiet; then
             echo "Nothing to commit after staging"

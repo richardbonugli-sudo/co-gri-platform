@@ -1833,6 +1833,43 @@ ${failures.length === 0 ? '_No failures recorded._' : failureRows}
 `;
 }
 
+// ─── In-Progress Marker ───────────────────────────────────────────────────────
+
+/**
+ * Writes a stub latest.json with _inProgress: true immediately at script startup.
+ * This ensures the public/docs file is always updated even if the script is killed
+ * before any companies are processed, so the dashboard shows "in progress" rather
+ * than stale "not yet run" state.
+ */
+function writeInProgressMarker(exchange: string, runId: string, startTime: string): void {
+  try {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    fs.mkdirSync(PUBLIC_OUTPUT_DIR, { recursive: true });
+    const marker = {
+      _inProgress: true,
+      _notYetRun: false,
+      runId,
+      exchange,
+      startTime,
+      endTime: null,
+      durationMs: 0,
+      totalCompanies: GLOBAL_COMPANIES.length,
+      completedCompanies: 0,
+      failedCompanies: 0,
+      skippedCompanies: 0,
+      results: [],
+      _partial: false,
+      _partialReason: 'Run is currently in progress',
+    };
+    const markerJson = JSON.stringify(marker, null, 2);
+    fs.writeFileSync(LATEST_FILE, markerJson, 'utf-8');
+    fs.writeFileSync(PUBLIC_LATEST_FILE, markerJson, 'utf-8');
+    log(`✅ In-progress marker written to: ${LATEST_FILE}`);
+  } catch (e) {
+    warn(`Could not write in-progress marker: ${String(e)}`);
+  }
+}
+
 // ─── Graceful Shutdown Support ────────────────────────────────────────────────
 
 let ABORT_REQUESTED = false;
@@ -1847,23 +1884,42 @@ function flushPartialResults(
 ): void {
   const allResults = [...previousResults, ...newResults];
   if (allResults.length === 0) {
-    warn('No results to flush - exiting without writing files');
+    warn('No results to flush — writing diagnostic stub so dashboard shows correct state');
+    try {
+      fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+      fs.mkdirSync(PUBLIC_OUTPUT_DIR, { recursive: true });
+      const diagnosticStub = {
+        _notYetRun: false,
+        _inProgress: false,
+        _zeroResults: true,
+        _zeroResultsReason: 'Script was interrupted before processing any companies. Check GitHub Secrets (FMP_API_KEY, OPENAI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY) and re-run the workflow.',
+        runId,
+        exchange,
+        startTime,
+        endTime: new Date().toISOString(),
+        durationMs: Date.now() - startMs,
+        totalCompanies: 0,
+        completedCompanies: 0,
+        failedCompanies: 0,
+        skippedCompanies: 0,
+        results: [],
+        _partial: true,
+        _partialReason: 'Run was interrupted by SIGTERM/SIGINT before any companies were processed',
+      };
+      const stubJson = JSON.stringify(diagnosticStub, null, 2);
+      fs.writeFileSync(LATEST_FILE, stubJson, 'utf-8');
+      fs.writeFileSync(PUBLIC_LATEST_FILE, stubJson, 'utf-8');
+      log(`   Diagnostic stub written to: ${LATEST_FILE}`);
+    } catch (e) {
+      warn(`Failed to write diagnostic stub: ${String(e)}`);
+    }
     return;
   }
 
-  let markedPartial = 0;
-  for (const r of allResults) {
-    if (r.enteredDataPath && r.filingFetched && !r.structuredDataFound && !r.errorMessage) {
-      (r as GlobalBaselineResult & { isPartial?: boolean }).isPartial = true;
-      r.errorMessage = 'Processing interrupted by budget shutdown';
-      markedPartial++;
-    }
-  }
-  if (markedPartial > 0) log(`   Marked ${markedPartial} in-flight result(s) as partial`);
-
   const endTime = new Date().toISOString();
   const durationMs = Date.now() - startMs;
-  const summary = {
+
+  const summary: RunSummary = {
     runId,
     exchange,
     startTime,
@@ -1875,31 +1931,48 @@ function flushPartialResults(
     skippedCompanies: allResults.filter(r => !r.enteredDataPath).length,
     results: allResults,
     _partial: true,
-    _partialReason: 'Run was interrupted by SIGTERM/SIGINT (time budget reached)',
-  };
+    _partialReason: 'Run was interrupted (SIGTERM/SIGINT or budget exceeded) — partial results saved.',
+  } as RunSummary & { _partial: boolean; _partialReason: string };
 
   try {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-    const isoStamp = endTime.replace(/[:.]/g, '-').replace('Z', 'Z');
-    const partialFile = path.join(OUTPUT_DIR, `baseline-${isoStamp}.json`);
-    fs.writeFileSync(partialFile, JSON.stringify(summary, null, 2), 'utf-8');
-    fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
     fs.mkdirSync(PUBLIC_OUTPUT_DIR, { recursive: true });
-    fs.writeFileSync(PUBLIC_LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
-    const summaryMd = generateSummaryReport(summary as RunSummary);
-    fs.writeFileSync(SUMMARY_FILE, summaryMd, 'utf-8');
-    writeByExchangeResults(allResults);
-    log(`\n⚠️  PARTIAL results flushed: ${allResults.length} companies`);
-    log(`   latest.json  → ${LATEST_FILE}`);
-    log(`   archive      → ${partialFile}`);
-    log(`   summary.md   → ${SUMMARY_FILE}`);
-    log('   Resume with: npx tsx src/scripts/runGlobalBaseline.ts --resume');
-  } catch (e) {
-    warn(`Failed to flush partial results: ${String(e)}`);
-  }
-}
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+    const isoStamp = endTime.replace(/[:.]/g, '-').replace('Z', 'Z');
+    const RESULTS_FILE = path.join(OUTPUT_DIR, `baseline-${isoStamp}.json`);
+    fs.writeFileSync(RESULTS_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+    log(`\n✅ [Partial] Timestamped results written to: ${RESULTS_FILE}`);
+
+    fs.writeFileSync(LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+    fs.writeFileSync(PUBLIC_LATEST_FILE, JSON.stringify(summary, null, 2), 'utf-8');
+    log(`✅ [Partial] Latest results written to:     ${LATEST_FILE}`);
+
+    const summaryMd = generateSummaryReport(summary);
+    fs.writeFileSync(SUMMARY_FILE, summaryMd, 'utf-8');
+    log(`✅ [Partial] Summary report written to:     ${SUMMARY_FILE}`);
+
+    writeByExchangeResults(allResults);
+    log(`✅ [Partial] Per-exchange results written to: ${BY_EXCHANGE_DIR}/`);
+  } catch (e) {
+    warn(`Failed to write partial results: ${String(e)}`);
+  }
+
+  const specific = allResults.filter(r => r.materiallySpecific).length;
+  const entered = allResults.filter(r => r.enteredDataPath).length;
+  const fetched = allResults.filter(r => r.filingFetched).length;
+  const narrativeParsed = allResults.filter(r => r.narrativeParsingSucceeded).length;
+  const durationSec = Math.round(durationMs / 1000);
+
+  log('\n═══════════════════════════════════════════════════════════════');
+  log(`  Global Baseline PARTIAL Flush in ${Math.floor(durationSec / 60)}m ${durationSec % 60}s`);
+  log(`  Companies processed:    ${allResults.length}`);
+  log(`  Entered data path:      ${entered} (${((entered / Math.max(1, allResults.length)) * 100).toFixed(1)}%)`);
+  log(`  Filing fetched:         ${fetched} (${((fetched / Math.max(1, allResults.length)) * 100).toFixed(1)}%)`);
+  log(`  Narrative parsed:       ${narrativeParsed} (${((narrativeParsed / Math.max(1, allResults.length)) * 100).toFixed(1)}%)`);
+  log(`  Materially specific:    ${specific} (${((specific / Math.max(1, allResults.length)) * 100).toFixed(1)}%)`);
+  log(`  Fallback-dominant:      ${allResults.length - specific} (${(((allResults.length - specific) / Math.max(1, allResults.length)) * 100).toFixed(1)}%)`);
+  log('═══════════════════════════════════════════════════════════════');
+}
 
 async function main(): Promise<void> {
   const runId = new Date().toISOString().replace(/[:.]/g, '-');
@@ -1911,6 +1984,12 @@ async function main(): Promise<void> {
   log(`  Exchange: ${EXCHANGE_FILTER}  |  Mode: ${IS_DRY_RUN ? 'DRY RUN' : 'LIVE'}  |  Concurrency: ${CONCURRENCY}`);
   log(`  Run ID: ${runId}`);
   log('═══════════════════════════════════════════════════════════════');
+
+  // Write in-progress marker immediately so the dashboard shows "run in progress"
+  // even if the script is killed before completing any companies.
+  if (!IS_DRY_RUN) {
+    writeInProgressMarker(EXCHANGE_FILTER, runId, startTime);
+  }
 
   if (!FMP_API_KEY && !IS_DRY_RUN) {
     log('⚠️  WARNING: FMP_API_KEY not set — financial data fetch will be skipped.');
