@@ -63,6 +63,10 @@ on:
           - 'false'
           - 'true'
 
+concurrency:
+  group: baseline-data-push
+  cancel-in-progress: false
+
 jobs:
   run-sec-baseline:
     name: Run SEC Baseline

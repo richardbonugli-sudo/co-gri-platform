@@ -192,27 +192,34 @@ type EvidenceTier = 'DIRECT' | 'ALLOCATED' | 'MODELED' | 'FALLBACK' | 'NOT_RUN';
 type ConfidenceGrade = 'A' | 'B' | 'C' | 'D' | 'F';
 
 interface GlobalBaselineResult {
+  // ── Identity ─────────────────────────────────────────────────────────────
   ticker: string;
-  companyName: string;
+  /** Aligned with src/types/company.ts GlobalBaselineResult.name */
+  name: string;
   exchange: string;
   country: string;
-  sector: string;
-  isADR: boolean;
   yahooTicker: string;
   companyType: 'operating' | 'commodity_trust' | 'gdr';
 
+  // ── Internal-only fields (not in shared type, kept for pipeline logic) ───
+  sector: string;
+  isADR: boolean;
+
   // Step 1: Data Path Entry
   enteredDataPath: boolean;
-  dataSource: 'fmp_api' | 'exchange_portal' | 'adr_reuse' | 'nav_only' | 'not_found';
+  /** Internal pipeline field — maps to filingSource in the shared type */
+  _internalDataSource: 'fmp_api' | 'exchange_portal' | 'adr_reuse' | 'nav_only' | 'not_found';
   dataSourceMs: number;
 
   // Step 2: Filing Retrieval
   filingFetched: boolean;
   filingType: 'annual_report_pdf' | 'dfp_xml' | 'annual_report_html' | 'nav_data' | 'adr_reuse' | null;
-  filingDate: string | null;
+  /** Aligned with src/types/company.ts GlobalBaselineResult.runDate */
+  runDate: string;
   filingSizeBytes: number | null;
   retrievalMs: number;
-  retrievalError: string | null;
+  /** Aligned with src/types/company.ts GlobalBaselineResult.errorMessage */
+  errorMessage: string | null;
 
   // Step 3: Structured Data
   structuredDataFound: boolean;
@@ -249,14 +256,24 @@ interface GlobalBaselineResult {
   confidenceGrade: ConfidenceGrade;
   recencyMultiplier: number;
 
+  // Financial data (FMP API) — aligned with shared type
+  revenueUSD?: number;
+  totalAssetsUSD?: number;
+  currency: string;
+  fxRateToUSD: number;
+
+  // Filing metadata — aligned with shared type
+  /** Aligned with src/types/company.ts GlobalBaselineResult.filingSource */
+  filingSource: 'HKEX' | 'CVM' | 'FCA_NSM' | 'SGX' | 'TWSE_MOPS' | 'SEDAR_PLUS' | 'IR_PAGE' | 'FMP' | 'REUSED_SEC';
+  filingUrl?: string;
+
   // Commodity trust specific
   navPerUnit?: number | null;
+  physicalHoldings?: string | null;
   custodianLocation?: string | null;
 
   // Metadata
   totalPipelineMs: number;
-  errorMessage: string | null;
-  timestamp: string;
 }
 
 interface RunSummary {
@@ -1375,7 +1392,7 @@ let PER_COMPANY_TIMEOUT_MS = 5 * 60 * 1000;
 function makeTimeoutResult(company: GlobalCompany): GlobalBaselineResult {
   return {
     ticker: company.ticker,
-    companyName: company.name,
+    name: company.name,
     exchange: company.exchange,
     country: company.country,
     sector: company.sector,
@@ -1383,14 +1400,13 @@ function makeTimeoutResult(company: GlobalCompany): GlobalBaselineResult {
     yahooTicker: company.yahooTicker,
     companyType: company.companyType || 'operating',
     enteredDataPath: false,
-    dataSource: 'not_found',
+    _internalDataSource: 'not_found',
     dataSourceMs: 0,
     filingFetched: false,
     filingType: null,
-    filingDate: null,
+    runDate: new Date().toISOString(),
     filingSizeBytes: null,
     retrievalMs: 0,
-    retrievalError: `Per-company timeout exceeded (${PER_COMPANY_TIMEOUT_MS / 1000}s)`,
     structuredDataFound: false,
     revenueDataFound: false,
     ppeDataFound: false,
@@ -1411,9 +1427,11 @@ function makeTimeoutResult(company: GlobalCompany): GlobalBaselineResult {
     compositeConfidenceScore: 0,
     confidenceGrade: 'F',
     recencyMultiplier: 0.70,
+    currency: '',
+    fxRateToUSD: 1,
+    filingSource: 'FMP',
     totalPipelineMs: PER_COMPANY_TIMEOUT_MS,
     errorMessage: `Per-company timeout exceeded (${PER_COMPANY_TIMEOUT_MS / 1000}s)`,
-    timestamp: new Date().toISOString(),
   };
 }
 
@@ -1443,7 +1461,7 @@ async function processCompany(
 
   const result: GlobalBaselineResult = {
     ticker: company.ticker,
-    companyName: company.name,
+    name: company.name,
     exchange: company.exchange,
     country: company.country,
     sector: company.sector,
@@ -1451,14 +1469,13 @@ async function processCompany(
     yahooTicker: company.yahooTicker,
     companyType: company.companyType || 'operating',
     enteredDataPath: false,
-    dataSource: 'not_found',
+    _internalDataSource: 'not_found',
     dataSourceMs: 0,
     filingFetched: false,
     filingType: null,
-    filingDate: null,
+    runDate: new Date().toISOString(),
     filingSizeBytes: null,
     retrievalMs: 0,
-    retrievalError: null,
     structuredDataFound: false,
     revenueDataFound: false,
     ppeDataFound: false,
@@ -1479,9 +1496,11 @@ async function processCompany(
     compositeConfidenceScore: 0,
     confidenceGrade: 'F',
     recencyMultiplier: 0.70,
+    currency: '',
+    fxRateToUSD: 1,
+    filingSource: 'FMP',
     totalPipelineMs: 0,
     errorMessage: null,
-    timestamp: new Date().toISOString(),
   };
 
   try {
@@ -1495,7 +1514,7 @@ async function processCompany(
     const dataStart = Date.now();
     const fmpData = await fetchFmpFinancialData(company);
     result.enteredDataPath = true;
-    result.dataSource = fmpData.error ? 'exchange_portal' : 'fmp_api';
+    result._internalDataSource = fmpData.error ? 'exchange_portal' : 'fmp_api';
     result.dataSourceMs = Date.now() - dataStart;
 
     const dataIcon = result.enteredDataPath ? '✅' : '❌';
@@ -1505,15 +1524,15 @@ async function processCompany(
     const report = await fetchAnnualReport(company);
     result.filingFetched = report.succeeded;
     result.filingType = report.filingType;
-    result.filingDate = report.filingDate;
+    result.runDate = report.filingDate ?? new Date().toISOString();
     result.filingSizeBytes = report.filingSizeBytes;
     result.retrievalMs = Date.now() - reportStart;
-    result.retrievalError = report.error;
+    if (report.error) result.errorMessage = report.error;
 
     if (report.filingType === 'adr_reuse') {
-      result.dataSource = 'adr_reuse';
+      result._internalDataSource = 'adr_reuse';
     } else if (report.filingType === 'nav_data') {
-      result.dataSource = 'nav_only';
+      result._internalDataSource = 'nav_only';
     }
 
     const retIcon = report.succeeded ? '✅' : '❌';
@@ -1585,7 +1604,7 @@ async function processCompany(
     result.specificChannelCount = assessment.specificChannelCount;
     result.dominantEvidenceTier = assessment.dominantEvidenceTier;
 
-    const recencyMult = filingRecencyMultiplier(result.filingDate);
+    const recencyMult = filingRecencyMultiplier(result.runDate);
     result.recencyMultiplier = recencyMult;
     const fmpBoostChannels = (fmpData.revenue ? 1 : 0) + (fmpData.geographicRevenue ? 1 : 0);
     const confidence = computeCompositeConfidence(result.channelTiers, recencyMult, fmpBoostChannels);

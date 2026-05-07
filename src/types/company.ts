@@ -329,6 +329,52 @@ export interface GlobalBaselineResult {
   physicalHoldings?: string;
   /** Location of the physical custodian (e.g. 'Canada' for Sprott trusts). */
   custodianLocation?: string;
+
+  // ── Extended pipeline diagnostics (written by runGlobalBaseline.ts) ───────
+  /** Whether the company is an ADR (American Depositary Receipt). */
+  isADR?: boolean;
+  /** Internal data-source tag used during the pipeline run. */
+  _internalDataSource?: string;
+  /** Time spent resolving the data source (ms). */
+  dataSourceMs?: number;
+  /** Type of filing fetched (e.g. '10-K', 'Annual Report'). */
+  filingType?: string | null;
+  /** Size of the fetched filing in bytes. */
+  filingSizeBytes?: number | null;
+  /** Time spent fetching the filing (ms). */
+  retrievalMs?: number;
+  /** True if revenue data was found in structured financial data. */
+  revenueDataFound?: boolean;
+  /** True if PP&E data was found in structured financial data. */
+  ppeDataFound?: boolean;
+  /** True if debt data was found in structured financial data. */
+  debtDataFound?: boolean;
+  /** True if geographic segment data was found in structured financial data. */
+  geographicSegmentsFound?: boolean;
+  /** Time spent extracting structured data (ms). */
+  structuredDataMs?: number;
+  /** Total number of countries found in narrative parsing. */
+  narrativeCountriesFound?: number;
+  /** Number of supply-chain countries found in narrative parsing. */
+  narrativeSupplyCountriesFound?: number;
+  /** Number of revenue countries found in narrative parsing. */
+  narrativeRevenueCountriesFound?: number;
+  /** Number of asset countries found in narrative parsing. */
+  narrativeAssetsCountriesFound?: number;
+  /** Time spent on narrative parsing (ms). */
+  narrativeParsingMs?: number;
+  /** True if the result is materially specific (not all FALLBACK tiers). */
+  materiallySpecific?: boolean;
+  /** Number of channels with a specific (non-FALLBACK) evidence tier. */
+  specificChannelCount?: number;
+  /** The dominant evidence tier across all channels. */
+  dominantEvidenceTier?: string;
+  /** Recency multiplier applied to the confidence score (0–1). */
+  recencyMultiplier?: number;
+  /** Letter grade for the composite confidence score (A–F). */
+  confidenceGrade?: string;
+  /** Total time spent processing this company in the pipeline (ms). */
+  totalPipelineMs?: number;
 }
 
 /**

@@ -68,8 +68,15 @@ import {
   ChevronDown,
   Globe,
   Building2,
+  BarChart2,
+  Layers,
 } from 'lucide-react';
 import type { GlobalBaselineResult, GlobalRunSummary, GlobalFilingSource } from '@/types/company';
+import {
+  loadCombinedBaseline,
+  type CombinedBaselineEntry,
+  type CombinedLoadResult,
+} from '@/services/baselineCacheService';
 
 // ─── SEC Types ────────────────────────────────────────────────────────────────
 
@@ -1524,10 +1531,402 @@ const SECBaselineTab: React.FC<SECBaselineTabProps> = ({
   );
 };
 
+
+// ─── Combined Baseline Tab ────────────────────────────────────────────────────
+
+const SOURCE_BADGE: Record<string, string> = {
+  SEC: 'bg-blue-900/60 text-blue-300 border-blue-700',
+  Global: 'bg-violet-900/60 text-violet-300 border-violet-700',
+};
+
+const CombinedBaselineTab: React.FC = () => {
+  const [data, setData] = useState<CombinedLoadResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [sourceFilter, setSourceFilter] = useState<'All' | 'SEC' | 'Global'>('All');
+  const [search, setSearch] = useState('');
+  const [gradeFilter, setGradeFilter] = useState<string>('All');
+
+  const load = async () => {
+    setLoading(true);
+    const result = await loadCombinedBaseline();
+    setData(result);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    return data.entries.filter((e) => {
+      if (sourceFilter !== 'All' && e.source !== sourceFilter) return false;
+      if (gradeFilter !== 'All' && e.confidenceGrade !== gradeFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (
+          !e.ticker.toLowerCase().includes(q) && !e.displayName.toLowerCase().includes(q)
+        )
+          return false;
+      }
+      return true;
+    });
+  }, [data, sourceFilter, gradeFilter, search]);
+
+  const stats = useMemo(() => {
+    if (!data) return null;
+    const all = data.entries;
+    const total = all.length;
+    if (total === 0) return null;
+    const pct = (n: number) => Math.round((n / total) * 100);
+    return {
+      total,
+      secCount: data.secTotal,
+      globalCount: data.globalTotal,
+      pctFiling: pct(all.filter((e) => e.filingFetched).length),
+      pctStructured: pct(all.filter((e) => e.structuredDataFound).length),
+      pctNarrative: pct(all.filter((e) => e.narrativeParsingSucceeded).length),
+      avgScore: total > 0
+        ? Math.round(all.reduce((s, e) => s + (e.compositeConfidenceScore ?? 0), 0) / total)
+        : 0,
+    };
+  }, [data]);
+
+  const sourceChartData = useMemo(() => {
+    if (!data) return [];
+    return [
+      { name: 'SEC', value: data.secTotal, fill: '#3b82f6' },
+      { name: 'Global', value: data.globalTotal, fill: '#8b5cf6' },
+    ];
+  }, [data]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <RefreshCw className="h-6 w-6 animate-spin text-blue-400 mr-3" />
+        <span className="text-slate-300">Loading combined baseline data…</span>
+      </div>
+    );
+  }
+
+  if (!data || data.combinedTotal === 0) {
+    return (
+      <Card className="bg-slate-900 border-slate-700">
+        <CardContent className="py-10 flex flex-col items-center gap-4 text-center">
+          <Layers className="h-10 w-10 text-slate-500" />
+          <div>
+            <p className="text-white font-semibold text-lg mb-1">No Combined Data Available</p>
+            <p className="text-slate-400 text-sm max-w-lg">
+              Run both the SEC Baseline and Global Baseline GitHub Actions workflows to populate
+              the combined 211-company view.
+            </p>
+          </div>
+          {(data?.secError || data?.globalError) && (
+            <div className="w-full max-w-lg space-y-2 text-left">
+              {data.secError && (
+                <div className="bg-rose-950/40 border border-rose-800 rounded px-3 py-2 text-xs text-rose-300">
+                  <strong>SEC error:</strong> {data.secError}
+                </div>
+              )}
+              {data.globalError && (
+                <div className="bg-amber-950/40 border border-amber-800 rounded px-3 py-2 text-xs text-amber-300">
+                  <strong>Global error:</strong> {data.globalError}
+                </div>
+              )}
+            </div>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={load}
+            className="border-slate-600 text-slate-300 hover:text-white"
+          >
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Retry
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Partial-error banners */}
+      {data.secError && (
+        <div className="bg-rose-950/40 border border-rose-800 rounded-lg px-4 py-2 flex items-start gap-2 text-xs text-rose-400">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span><strong>SEC data error:</strong> {data.secError}</span>
+        </div>
+      )}
+      {data.globalError && (
+        <div className="bg-amber-950/40 border border-amber-800 rounded-lg px-4 py-2 flex items-start gap-2 text-xs text-amber-400">
+          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+          <span><strong>Global data error:</strong> {data.globalError}</span>
+        </div>
+      )}
+
+      {/* Load metadata */}
+      <p className="text-xs text-slate-500">
+        Combined view loaded at {data.loadedAt}
+        {data.secRunId && <> · SEC run <span className="font-mono text-slate-400">{data.secRunId}</span></>}
+        {data.globalRunId && <> · Global run <span className="font-mono text-slate-400">{data.globalRunId}</span></>}
+      </p>
+
+      {/* Summary stats */}
+      {stats && (
+        <section>
+          <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
+            Combined Summary — {stats.total} companies
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+            <StatCard label="Total Companies" value={String(stats.total)} />
+            <StatCard
+              label="SEC Companies"
+              value={String(stats.secCount)}
+              accent="text-blue-400"
+            />
+            <StatCard
+              label="Global Companies"
+              value={String(stats.globalCount)}
+              accent="text-violet-400"
+            />
+            <StatCard
+              label="Filing Fetched"
+              value={`${stats.pctFiling}%`}
+              accent={stats.pctFiling >= 70 ? 'text-emerald-400' : 'text-amber-400'}
+            />
+            <StatCard
+              label="Structured Parsing"
+              value={`${stats.pctStructured}%`}
+              accent={stats.pctStructured >= 60 ? 'text-emerald-400' : 'text-amber-400'}
+            />
+            <StatCard
+              label="Narrative Parsing"
+              value={`${stats.pctNarrative}%`}
+              accent={stats.pctNarrative >= 50 ? 'text-emerald-400' : 'text-amber-400'}
+            />
+            <StatCard
+              label="Avg CO-GRI Score"
+              value={String(stats.avgScore)}
+              accent={stats.avgScore >= 50 ? 'text-emerald-400' : 'text-amber-400'}
+            />
+          </div>
+        </section>
+      )}
+
+      {/* Source breakdown chart */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card className="bg-slate-900 border-slate-700">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-slate-300">Companies by Source</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={sourceChartData} margin={{ top: 4, right: 8, left: -10, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={{ stroke: '#475569' }} tickLine={false} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 6 }}
+                  labelStyle={{ color: '#e2e8f0' }}
+                  itemStyle={{ color: '#94a3b8' }}
+                />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {sourceChartData.map((entry, i) => (
+                    <Cell key={i} fill={entry.fill} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-slate-900 border-slate-700">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-slate-300">Source Distribution</CardTitle>
+          </CardHeader>
+          <CardContent className="flex items-center justify-center gap-8 h-[180px]">
+            <PieChart width={160} height={160}>
+              <Pie
+                data={sourceChartData}
+                cx={75}
+                cy={75}
+                innerRadius={45}
+                outerRadius={70}
+                dataKey="value"
+                paddingAngle={3}
+              >
+                {sourceChartData.map((entry, i) => (
+                  <Cell key={i} fill={entry.fill} />
+                ))}
+              </Pie>
+              <Tooltip
+                contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 6, fontSize: 11 }}
+                itemStyle={{ color: '#94a3b8' }}
+              />
+            </PieChart>
+            <div className="space-y-3">
+              {sourceChartData.map((d) => (
+                <div key={d.name} className="flex items-center gap-2">
+                  <span className="inline-block w-3 h-3 rounded-sm" style={{ background: d.fill }} />
+                  <span className="text-sm text-slate-300">{d.name}</span>
+                  <span className="text-sm font-semibold text-white ml-1">{d.value}</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 border-t border-slate-700 pt-2 mt-1">
+                <span className="inline-block w-3 h-3 rounded-sm bg-slate-600" />
+                <span className="text-sm text-slate-400">Total</span>
+                <span className="text-sm font-semibold text-white ml-1">{data.combinedTotal}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      {/* Filters */}
+      <section className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Filters</h2>
+        <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex-1 min-w-[180px]">
+            <label className="text-xs text-slate-500 mb-1 block">Ticker / Name</label>
+            <Input
+              placeholder="Search…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-slate-800 border-slate-600 text-white placeholder:text-slate-500 h-8 text-sm"
+            />
+          </div>
+          <div className="min-w-[120px]">
+            <label className="text-xs text-slate-500 mb-1 block">Source</label>
+            <Select value={sourceFilter} onValueChange={(v) => setSourceFilter(v as 'All' | 'SEC' | 'Global')}>
+              <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600 text-white">
+                {['All', 'SEC', 'Global'].map((v) => (
+                  <SelectItem key={v} value={v} className="text-slate-200 focus:bg-slate-700">{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="min-w-[120px]">
+            <label className="text-xs text-slate-500 mb-1 block">CO-GRI Grade</label>
+            <Select value={gradeFilter} onValueChange={setGradeFilter}>
+              <SelectTrigger className="bg-slate-800 border-slate-600 text-white h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-600 text-white">
+                {['All', 'A', 'B', 'C', 'D', 'F'].map((v) => (
+                  <SelectItem key={v} value={v} className="text-slate-200 focus:bg-slate-700">{v}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {(sourceFilter !== 'All' || gradeFilter !== 'All' || search) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => { setSourceFilter('All'); setGradeFilter('All'); setSearch(''); }}
+              className="text-slate-400 hover:text-white h-8"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-slate-500 mt-2">
+          Showing {filtered.length} of {data.combinedTotal} companies
+        </p>
+      </section>
+
+      {/* Combined data table */}
+      <section>
+        <div className="rounded-lg border border-slate-700 overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-900 border-slate-700 hover:bg-slate-900">
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap">Source</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap">Ticker</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap">Company</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap">Exchange</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap">Country</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap text-center">Filing</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap text-center">Structured</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap text-center">Narrative</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap text-right">CO-GRI Score</TableHead>
+                <TableHead className="text-slate-400 text-xs font-semibold whitespace-nowrap text-center">Grade</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filtered.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={10} className="text-center text-slate-500 py-10">
+                    No companies match the current filters.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filtered.map((e, idx) => (
+                  <TableRow key={`${e.source}-${e.ticker}-${idx}`} className="border-slate-800 hover:bg-slate-900/60 transition-colors">
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 border ${SOURCE_BADGE[e.source] ?? 'bg-slate-700 text-slate-300 border-slate-600'}`}
+                      >
+                        {e.source}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-blue-400 font-semibold whitespace-nowrap">
+                      {e.ticker}
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-200 max-w-[200px] truncate whitespace-nowrap">
+                      {e.displayName}
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-400 whitespace-nowrap">
+                      {e.exchange || '—'}
+                    </TableCell>
+                    <TableCell className="text-xs text-slate-300 whitespace-nowrap">
+                      {e.country || '—'}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <BoolIcon value={e.filingFetched} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <BoolIcon value={e.structuredDataFound} />
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <BoolIcon value={e.narrativeParsingSucceeded} />
+                    </TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <span className={`font-mono text-xs font-semibold ${confidenceColor(e.compositeConfidenceScore)}`}>
+                        {e.compositeConfidenceScore ?? 0}
+                      </span>
+                      <span className="text-slate-600 text-[10px] ml-0.5">/100</span>
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] px-1.5 border font-semibold ${
+                          e.confidenceGrade === 'A' ? 'border-emerald-600 text-emerald-400' :
+                          e.confidenceGrade === 'B' ? 'border-blue-600 text-blue-400' :
+                          e.confidenceGrade === 'C' ? 'border-amber-600 text-amber-400' :
+                          e.confidenceGrade === 'D' ? 'border-orange-600 text-orange-400' :
+                          'border-rose-700 text-rose-400'
+                        }`}
+                      >
+                        {e.confidenceGrade ?? '—'}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </section>
+    </div>
+  );
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const BaselineResultsDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'sec' | 'global'>('sec');
+  const [activeTab, setActiveTab] = useState<'sec' | 'global' | 'combined'>('sec');
 
   // SEC data state
   const [runSummary, setRunSummary] = useState<RunSummary | null>(null);
@@ -1728,7 +2127,7 @@ const BaselineResultsDashboard: React.FC = () => {
 
       {/* ── Tab switcher ── */}
       <div className="px-6 pt-5 pb-0">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'sec' | 'global')}>
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'sec' | 'global' | 'combined')}>
           <TabsList className="bg-slate-900 border border-slate-700 h-10">
             <TabsTrigger
               value="sec"
@@ -1743,6 +2142,13 @@ const BaselineResultsDashboard: React.FC = () => {
             >
               <Globe className="h-3.5 w-3.5" />
               Global Baseline
+            </TabsTrigger>
+            <TabsTrigger
+              value="combined"
+              className="data-[state=active]:bg-slate-700 data-[state=active]:text-white text-slate-400 h-8 px-4 flex items-center gap-2"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+              Combined (211)
             </TabsTrigger>
           </TabsList>
 
@@ -1766,10 +2172,16 @@ const BaselineResultsDashboard: React.FC = () => {
           <TabsContent value="global" className="mt-5">
             <GlobalBaselineTab />
           </TabsContent>
+
+          {/* ── Combined tab ── */}
+          <TabsContent value="combined" className="mt-5">
+            <CombinedBaselineTab />
+          </TabsContent>
         </Tabs>
       </div>
     </div>
   );
 };
+
 
 export default BaselineResultsDashboard;

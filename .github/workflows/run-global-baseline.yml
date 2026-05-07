@@ -81,6 +81,10 @@ on:
           - 'false'
           - 'true'
 
+concurrency:
+  group: baseline-data-push
+  cancel-in-progress: false
+
 jobs:
   run-global-baseline:
     name: Run Global Baseline
@@ -355,7 +359,12 @@ jobs:
           git config --local user.name "github-actions[bot]"
 
           # Pull latest to avoid push conflicts (update-benchmark-data may have pushed)
-          git pull --rebase origin HEAD || true
+          git fetch origin
+          if ! git rebase origin/HEAD; then
+            echo "Rebase conflict detected — aborting rebase and using merge instead"
+            git rebase --abort
+            git merge --no-edit origin/HEAD || true
+          fi
 
           git add docs/global-baseline-results/ || true
           git add public/docs/global-baseline-results/ || true
