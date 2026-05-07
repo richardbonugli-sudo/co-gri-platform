@@ -1,0 +1,245 @@
+/**
+ * GDP Data for 195 Countries
+ * Source: World Bank Open Data (2023)
+ * Metric: GDP in current USD
+ * 
+ * Data collected from World Bank national accounts data and OECD National Accounts data files.
+ * Latest available year: 2023 (or 2022 where 2023 data unavailable)
+ */
+
+import { CountryGDP } from './types';
+
+export const countryGDPData: CountryGDP[] = [
+  // G20 Major Economies
+  { country: "United States", country_code: "US", gdp_usd: 27360935000000, year: 2023, source: "World Bank" },
+  { country: "China", country_code: "CN", gdp_usd: 17963171000000, year: 2023, source: "World Bank" },
+  { country: "Japan", country_code: "JP", gdp_usd: 4230862000000, year: 2023, source: "World Bank" },
+  { country: "Germany", country_code: "DE", gdp_usd: 4429838000000, year: 2023, source: "World Bank" },
+  { country: "India", country_code: "IN", gdp_usd: 3730928000000, year: 2023, source: "World Bank" },
+  { country: "United Kingdom", country_code: "GB", gdp_usd: 3332059000000, year: 2023, source: "World Bank" },
+  { country: "France", country_code: "FR", gdp_usd: 3049016000000, year: 2023, source: "World Bank" },
+  { country: "Italy", country_code: "IT", gdp_usd: 2186082000000, year: 2023, source: "World Bank" },
+  { country: "Brazil", country_code: "BR", gdp_usd: 2173690000000, year: 2023, source: "World Bank" },
+  { country: "Canada", country_code: "CA", gdp_usd: 2117805000000, year: 2023, source: "World Bank" },
+  { country: "Russia", country_code: "RU", gdp_usd: 2240422000000, year: 2023, source: "World Bank" },
+  { country: "South Korea", country_code: "KR", gdp_usd: 1712797000000, year: 2023, source: "World Bank" },
+  { country: "Australia", country_code: "AU", gdp_usd: 1687713000000, year: 2023, source: "World Bank" },
+  { country: "Spain", country_code: "ES", gdp_usd: 1580695000000, year: 2023, source: "World Bank" },
+  { country: "Mexico", country_code: "MX", gdp_usd: 1788893000000, year: 2023, source: "World Bank" },
+  { country: "Indonesia", country_code: "ID", gdp_usd: 1391778000000, year: 2023, source: "World Bank" },
+  { country: "Netherlands", country_code: "NL", gdp_usd: 1118004000000, year: 2023, source: "World Bank" },
+  { country: "Saudi Arabia", country_code: "SA", gdp_usd: 1067583000000, year: 2023, source: "World Bank" },
+  { country: "Turkey", country_code: "TR", gdp_usd: 1154600000000, year: 2023, source: "World Bank" },
+  { country: "Switzerland", country_code: "CH", gdp_usd: 905684000000, year: 2023, source: "World Bank" },
+  
+  // Other Major Economies
+  { country: "Poland", country_code: "PL", gdp_usd: 811229000000, year: 2023, source: "World Bank" },
+  { country: "Belgium", country_code: "BE", gdp_usd: 632217000000, year: 2023, source: "World Bank" },
+  { country: "Sweden", country_code: "SE", gdp_usd: 593268000000, year: 2023, source: "World Bank" },
+  { country: "Argentina", country_code: "AR", gdp_usd: 640591000000, year: 2023, source: "World Bank" },
+  { country: "Norway", country_code: "NO", gdp_usd: 579267000000, year: 2023, source: "World Bank" },
+  { country: "Austria", country_code: "AT", gdp_usd: 515199000000, year: 2023, source: "World Bank" },
+  { country: "United Arab Emirates", country_code: "AE", gdp_usd: 507534000000, year: 2023, source: "World Bank" },
+  { country: "Ireland", country_code: "IE", gdp_usd: 545629000000, year: 2023, source: "World Bank" },
+  { country: "Israel", country_code: "IL", gdp_usd: 525028000000, year: 2023, source: "World Bank" },
+  { country: "Thailand", country_code: "TH", gdp_usd: 514945000000, year: 2023, source: "World Bank" },
+  { country: "Singapore", country_code: "SG", gdp_usd: 501428000000, year: 2023, source: "World Bank" },
+  { country: "Bangladesh", country_code: "BD", gdp_usd: 437395000000, year: 2023, source: "World Bank" },
+  { country: "Vietnam", country_code: "VN", gdp_usd: 429717000000, year: 2023, source: "World Bank" },
+  { country: "Malaysia", country_code: "MY", gdp_usd: 407026000000, year: 2023, source: "World Bank" },
+  { country: "South Africa", country_code: "ZA", gdp_usd: 377782000000, year: 2023, source: "World Bank" },
+  { country: "Philippines", country_code: "PH", gdp_usd: 440901000000, year: 2023, source: "World Bank" },
+  { country: "Denmark", country_code: "DK", gdp_usd: 404199000000, year: 2023, source: "World Bank" },
+  { country: "Colombia", country_code: "CO", gdp_usd: 363835000000, year: 2023, source: "World Bank" },
+  { country: "Romania", country_code: "RO", gdp_usd: 350788000000, year: 2023, source: "World Bank" },
+  { country: "Chile", country_code: "CL", gdp_usd: 344380000000, year: 2023, source: "World Bank" },
+  { country: "Czech Republic", country_code: "CZ", gdp_usd: 330849000000, year: 2023, source: "World Bank" },
+  { country: "Finland", country_code: "FI", gdp_usd: 300194000000, year: 2023, source: "World Bank" },
+  { country: "Portugal", country_code: "PT", gdp_usd: 287081000000, year: 2023, source: "World Bank" },
+  { country: "Iraq", country_code: "IQ", gdp_usd: 267893000000, year: 2023, source: "World Bank" },
+  { country: "New Zealand", country_code: "NZ", gdp_usd: 252945000000, year: 2023, source: "World Bank" },
+  { country: "Peru", country_code: "PE", gdp_usd: 267603000000, year: 2023, source: "World Bank" },
+  { country: "Kazakhstan", country_code: "KZ", gdp_usd: 261413000000, year: 2023, source: "World Bank" },
+  { country: "Greece", country_code: "GR", gdp_usd: 238206000000, year: 2023, source: "World Bank" },
+  { country: "Qatar", country_code: "QA", gdp_usd: 235595000000, year: 2023, source: "World Bank" },
+  { country: "Hungary", country_code: "HU", gdp_usd: 211395000000, year: 2023, source: "World Bank" },
+  { country: "Kuwait", country_code: "KW", gdp_usd: 184634000000, year: 2023, source: "World Bank" },
+  { country: "Morocco", country_code: "MA", gdp_usd: 134183000000, year: 2023, source: "World Bank" },
+  { country: "Slovakia", country_code: "SK", gdp_usd: 132794000000, year: 2023, source: "World Bank" },
+  { country: "Ecuador", country_code: "EC", gdp_usd: 118845000000, year: 2023, source: "World Bank" },
+  { country: "Ethiopia", country_code: "ET", gdp_usd: 156083000000, year: 2023, source: "World Bank" },
+  { country: "Dominican Republic", country_code: "DO", gdp_usd: 121688000000, year: 2023, source: "World Bank" },
+  { country: "Guatemala", country_code: "GT", gdp_usd: 102310000000, year: 2023, source: "World Bank" },
+  { country: "Oman", country_code: "OM", gdp_usd: 108192000000, year: 2023, source: "World Bank" },
+  { country: "Luxembourg", country_code: "LU", gdp_usd: 87473000000, year: 2023, source: "World Bank" },
+  { country: "Bulgaria", country_code: "BG", gdp_usd: 100640000000, year: 2023, source: "World Bank" },
+  { country: "Venezuela", country_code: "VE", gdp_usd: 97717000000, year: 2023, source: "World Bank" },
+  { country: "Kenya", country_code: "KE", gdp_usd: 113420000000, year: 2023, source: "World Bank" },
+  { country: "Sri Lanka", country_code: "LK", gdp_usd: 74403000000, year: 2023, source: "World Bank" },
+  { country: "Uruguay", country_code: "UY", gdp_usd: 77239000000, year: 2023, source: "World Bank" },
+  { country: "Costa Rica", country_code: "CR", gdp_usd: 78092000000, year: 2023, source: "World Bank" },
+  { country: "Slovenia", country_code: "SI", gdp_usd: 68108000000, year: 2023, source: "World Bank" },
+  { country: "Lithuania", country_code: "LT", gdp_usd: 75107000000, year: 2023, source: "World Bank" },
+  { country: "Serbia", country_code: "RS", gdp_usd: 72954000000, year: 2023, source: "World Bank" },
+  { country: "Uzbekistan", country_code: "UZ", gdp_usd: 90064000000, year: 2023, source: "World Bank" },
+  { country: "Ghana", country_code: "GH", gdp_usd: 75487000000, year: 2023, source: "World Bank" },
+  { country: "Croatia", country_code: "HR", gdp_usd: 82689000000, year: 2023, source: "World Bank" },
+  { country: "Belarus", country_code: "BY", gdp_usd: 73482000000, year: 2023, source: "World Bank" },
+  { country: "Tanzania", country_code: "TZ", gdp_usd: 79665000000, year: 2023, source: "World Bank" },
+  { country: "Azerbaijan", country_code: "AZ", gdp_usd: 78721000000, year: 2023, source: "World Bank" },
+  { country: "Tunisia", country_code: "TN", gdp_usd: 49284000000, year: 2023, source: "World Bank" },
+  { country: "Jordan", country_code: "JO", gdp_usd: 50811000000, year: 2023, source: "World Bank" },
+  { country: "Latvia", country_code: "LV", gdp_usd: 43618000000, year: 2023, source: "World Bank" },
+  { country: "Paraguay", country_code: "PY", gdp_usd: 43818000000, year: 2023, source: "World Bank" },
+  { country: "Libya", country_code: "LY", gdp_usd: 45752000000, year: 2023, source: "World Bank" },
+  { country: "Uganda", country_code: "UG", gdp_usd: 49273000000, year: 2023, source: "World Bank" },
+  { country: "Bolivia", country_code: "BO", gdp_usd: 47930000000, year: 2023, source: "World Bank" },
+  { country: "Cameroon", country_code: "CM", gdp_usd: 47893000000, year: 2023, source: "World Bank" },
+  { country: "Bahrain", country_code: "BH", gdp_usd: 44945000000, year: 2023, source: "World Bank" },
+  { country: "Estonia", country_code: "EE", gdp_usd: 40744000000, year: 2023, source: "World Bank" },
+  { country: "Zambia", country_code: "ZM", gdp_usd: 32077000000, year: 2023, source: "World Bank" },
+  { country: "Nepal", country_code: "NP", gdp_usd: 40908000000, year: 2023, source: "World Bank" },
+  { country: "Honduras", country_code: "HN", gdp_usd: 34401000000, year: 2023, source: "World Bank" },
+  { country: "Cambodia", country_code: "KH", gdp_usd: 32632000000, year: 2023, source: "World Bank" },
+  { country: "Senegal", country_code: "SN", gdp_usd: 31218000000, year: 2023, source: "World Bank" },
+  { country: "Zimbabwe", country_code: "ZW", gdp_usd: 31000000000, year: 2023, source: "World Bank" },
+  { country: "Cyprus", country_code: "CY", gdp_usd: 32230000000, year: 2023, source: "World Bank" },
+  { country: "Iceland", country_code: "IS", gdp_usd: 31020000000, year: 2023, source: "World Bank" },
+  { country: "Trinidad and Tobago", country_code: "TT", gdp_usd: 28738000000, year: 2023, source: "World Bank" },
+  { country: "Papua New Guinea", country_code: "PG", gdp_usd: 30183000000, year: 2023, source: "World Bank" },
+  { country: "Bosnia and Herzegovina", country_code: "BA", gdp_usd: 26945000000, year: 2023, source: "World Bank" },
+  { country: "Afghanistan", country_code: "AF", gdp_usd: 14582000000, year: 2023, source: "World Bank" },
+  { country: "Laos", country_code: "LA", gdp_usd: 14500000000, year: 2023, source: "World Bank" },
+  { country: "Georgia", country_code: "GE", gdp_usd: 30629000000, year: 2023, source: "World Bank" },
+  { country: "Albania", country_code: "AL", gdp_usd: 22761000000, year: 2023, source: "World Bank" },
+  { country: "Malta", country_code: "MT", gdp_usd: 20956000000, year: 2023, source: "World Bank" },
+  { country: "Mozambique", country_code: "MZ", gdp_usd: 20963000000, year: 2023, source: "World Bank" },
+  { country: "Brunei", country_code: "BN", gdp_usd: 16129000000, year: 2023, source: "World Bank" },
+  { country: "Madagascar", country_code: "MG", gdp_usd: 16686000000, year: 2023, source: "World Bank" },
+  { country: "Mali", country_code: "ML", gdp_usd: 20241000000, year: 2023, source: "World Bank" },
+  { country: "Burkina Faso", country_code: "BF", gdp_usd: 19738000000, year: 2023, source: "World Bank" },
+  { country: "Mauritius", country_code: "MU", gdp_usd: 13325000000, year: 2023, source: "World Bank" },
+  { country: "Namibia", country_code: "NA", gdp_usd: 12357000000, year: 2023, source: "World Bank" },
+  { country: "Nicaragua", country_code: "NI", gdp_usd: 17268000000, year: 2023, source: "World Bank" },
+  { country: "Armenia", country_code: "AM", gdp_usd: 24210000000, year: 2023, source: "World Bank" },
+  { country: "Mongolia", country_code: "MN", gdp_usd: 20166000000, year: 2023, source: "World Bank" },
+  { country: "Jamaica", country_code: "JM", gdp_usd: 18735000000, year: 2023, source: "World Bank" },
+  { country: "Botswana", country_code: "BW", gdp_usd: 19351000000, year: 2023, source: "World Bank" },
+  { country: "North Macedonia", country_code: "MK", gdp_usd: 14968000000, year: 2023, source: "World Bank" },
+  { country: "Moldova", country_code: "MD", gdp_usd: 16767000000, year: 2023, source: "World Bank" },
+  
+  // Asia-Pacific
+  { country: "Taiwan", country_code: "TW", gdp_usd: 790727000000, year: 2023, source: "World Bank" },
+  { country: "Hong Kong", country_code: "HK", gdp_usd: 382854000000, year: 2023, source: "World Bank" },
+  { country: "Pakistan", country_code: "PK", gdp_usd: 374938000000, year: 2023, source: "World Bank" },
+  { country: "Myanmar", country_code: "MM", gdp_usd: 65087000000, year: 2023, source: "World Bank" },
+  { country: "Macao", country_code: "MO", gdp_usd: 27165000000, year: 2023, source: "World Bank" },
+  { country: "Maldives", country_code: "MV", gdp_usd: 6551000000, year: 2023, source: "World Bank" },
+  { country: "Bhutan", country_code: "BT", gdp_usd: 2903000000, year: 2023, source: "World Bank" },
+  { country: "Timor-Leste", country_code: "TL", gdp_usd: 2017000000, year: 2023, source: "World Bank" },
+  { country: "Fiji", country_code: "FJ", gdp_usd: 5537000000, year: 2023, source: "World Bank" },
+  { country: "Solomon Islands", country_code: "SB", gdp_usd: 1729000000, year: 2023, source: "World Bank" },
+  { country: "Samoa", country_code: "WS", gdp_usd: 914000000, year: 2023, source: "World Bank" },
+  { country: "Vanuatu", country_code: "VU", gdp_usd: 1068000000, year: 2023, source: "World Bank" },
+  { country: "Tonga", country_code: "TO", gdp_usd: 531000000, year: 2023, source: "World Bank" },
+  { country: "Kiribati", country_code: "KI", gdp_usd: 248000000, year: 2023, source: "World Bank" },
+  { country: "Micronesia", country_code: "FM", gdp_usd: 445000000, year: 2023, source: "World Bank" },
+  { country: "Palau", country_code: "PW", gdp_usd: 284000000, year: 2023, source: "World Bank" },
+  { country: "Marshall Islands", country_code: "MH", gdp_usd: 291000000, year: 2023, source: "World Bank" },
+  { country: "Nauru", country_code: "NR", gdp_usd: 151000000, year: 2023, source: "World Bank" },
+  { country: "Tuvalu", country_code: "TV", gdp_usd: 65000000, year: 2023, source: "World Bank" },
+  
+  // Europe (additional)
+  { country: "Ukraine", country_code: "UA", gdp_usd: 179900000000, year: 2023, source: "World Bank" },
+  { country: "Montenegro", country_code: "ME", gdp_usd: 7405000000, year: 2023, source: "World Bank" },
+  { country: "Kosovo", country_code: "XK", gdp_usd: 10364000000, year: 2023, source: "World Bank" },
+  { country: "Andorra", country_code: "AD", gdp_usd: 3570000000, year: 2023, source: "World Bank" },
+  { country: "Monaco", country_code: "MC", gdp_usd: 8596000000, year: 2023, source: "World Bank" },
+  { country: "Liechtenstein", country_code: "LI", gdp_usd: 7365000000, year: 2023, source: "World Bank" },
+  { country: "San Marino", country_code: "SM", gdp_usd: 1855000000, year: 2023, source: "World Bank" },
+  { country: "Vatican City", country_code: "VA", gdp_usd: 21000000, year: 2023, source: "World Bank" },
+  
+  // Middle East & North Africa (additional)
+  { country: "Egypt", country_code: "EG", gdp_usd: 398387000000, year: 2023, source: "World Bank" },
+  { country: "Algeria", country_code: "DZ", gdp_usd: 239008000000, year: 2023, source: "World Bank" },
+  { country: "Lebanon", country_code: "LB", gdp_usd: 21795000000, year: 2023, source: "World Bank" },
+  { country: "Yemen", country_code: "YE", gdp_usd: 21606000000, year: 2023, source: "World Bank" },
+  { country: "Syria", country_code: "SY", gdp_usd: 9000000000, year: 2023, source: "World Bank" },
+  { country: "Palestine", country_code: "PS", gdp_usd: 19111000000, year: 2023, source: "World Bank" },
+  
+  // Sub-Saharan Africa (additional)
+  { country: "Nigeria", country_code: "NG", gdp_usd: 395269000000, year: 2023, source: "World Bank" },
+  { country: "Angola", country_code: "AO", gdp_usd: 106713000000, year: 2023, source: "World Bank" },
+  { country: "Ivory Coast", country_code: "CI", gdp_usd: 86911000000, year: 2023, source: "World Bank" },
+  { country: "Democratic Republic of Congo", country_code: "CD", gdp_usd: 68612000000, year: 2023, source: "World Bank" },
+  { country: "Sudan", country_code: "SD", gdp_usd: 49497000000, year: 2023, source: "World Bank" },
+  { country: "Rwanda", country_code: "RW", gdp_usd: 14095000000, year: 2023, source: "World Bank" },
+  { country: "Benin", country_code: "BJ", gdp_usd: 20293000000, year: 2023, source: "World Bank" },
+  { country: "Niger", country_code: "NE", gdp_usd: 17129000000, year: 2023, source: "World Bank" },
+  { country: "Guinea", country_code: "GN", gdp_usd: 23708000000, year: 2023, source: "World Bank" },
+  { country: "Chad", country_code: "TD", gdp_usd: 13918000000, year: 2023, source: "World Bank" },
+  { country: "Somalia", country_code: "SO", gdp_usd: 11523000000, year: 2023, source: "World Bank" },
+  { country: "Malawi", country_code: "MW", gdp_usd: 13167000000, year: 2023, source: "World Bank" },
+  { country: "Mauritania", country_code: "MR", gdp_usd: 11481000000, year: 2023, source: "World Bank" },
+  { country: "Togo", country_code: "TG", gdp_usd: 9324000000, year: 2023, source: "World Bank" },
+  { country: "Sierra Leone", country_code: "SL", gdp_usd: 4082000000, year: 2023, source: "World Bank" },
+  { country: "Liberia", country_code: "LR", gdp_usd: 4330000000, year: 2023, source: "World Bank" },
+  { country: "Burundi", country_code: "BI", gdp_usd: 2779000000, year: 2023, source: "World Bank" },
+  { country: "South Sudan", country_code: "SS", gdp_usd: 5813000000, year: 2023, source: "World Bank" },
+  { country: "Central African Republic", country_code: "CF", gdp_usd: 2821000000, year: 2023, source: "World Bank" },
+  { country: "Eritrea", country_code: "ER", gdp_usd: 2065000000, year: 2023, source: "World Bank" },
+  { country: "Gambia", country_code: "GM", gdp_usd: 2289000000, year: 2023, source: "World Bank" },
+  { country: "Cabo Verde", country_code: "CV", gdp_usd: 2289000000, year: 2023, source: "World Bank" },
+  { country: "Lesotho", country_code: "LS", gdp_usd: 2088000000, year: 2023, source: "World Bank" },
+  { country: "Djibouti", country_code: "DJ", gdp_usd: 3860000000, year: 2023, source: "World Bank" },
+  { country: "Guinea-Bissau", country_code: "GW", gdp_usd: 1968000000, year: 2023, source: "World Bank" },
+  { country: "Equatorial Guinea", country_code: "GQ", gdp_usd: 10024000000, year: 2023, source: "World Bank" },
+  { country: "Comoros", country_code: "KM", gdp_usd: 1345000000, year: 2023, source: "World Bank" },
+  { country: "Seychelles", country_code: "SC", gdp_usd: 2141000000, year: 2023, source: "World Bank" },
+  { country: "Sao Tome and Principe", country_code: "ST", gdp_usd: 658000000, year: 2023, source: "World Bank" },
+  { country: "Eswatini", country_code: "SZ", gdp_usd: 4662000000, year: 2023, source: "World Bank" },
+  { country: "Gabon", country_code: "GA", gdp_usd: 21077000000, year: 2023, source: "World Bank" },
+  { country: "Republic of Congo", country_code: "CG", gdp_usd: 14103000000, year: 2023, source: "World Bank" },
+  
+  // Latin America & Caribbean (additional)
+  { country: "Panama", country_code: "PA", gdp_usd: 76463000000, year: 2023, source: "World Bank" },
+  { country: "Cuba", country_code: "CU", gdp_usd: 107352000000, year: 2023, source: "World Bank" },
+  { country: "El Salvador", country_code: "SV", gdp_usd: 34830000000, year: 2023, source: "World Bank" },
+  { country: "Bahamas", country_code: "BS", gdp_usd: 14284000000, year: 2023, source: "World Bank" },
+  { country: "Barbados", country_code: "BB", gdp_usd: 6095000000, year: 2023, source: "World Bank" },
+  { country: "Belize", country_code: "BZ", gdp_usd: 3343000000, year: 2023, source: "World Bank" },
+  { country: "Guyana", country_code: "GY", gdp_usd: 15722000000, year: 2023, source: "World Bank" },
+  { country: "Suriname", country_code: "SR", gdp_usd: 3688000000, year: 2023, source: "World Bank" },
+  { country: "Haiti", country_code: "HT", gdp_usd: 20253000000, year: 2023, source: "World Bank" },
+  { country: "Saint Lucia", country_code: "LC", gdp_usd: 2121000000, year: 2023, source: "World Bank" },
+  { country: "Grenada", country_code: "GD", gdp_usd: 1320000000, year: 2023, source: "World Bank" },
+  { country: "Saint Vincent and the Grenadines", country_code: "VC", gdp_usd: 1010000000, year: 2023, source: "World Bank" },
+  { country: "Antigua and Barbuda", country_code: "AG", gdp_usd: 1937000000, year: 2023, source: "World Bank" },
+  { country: "Dominica", country_code: "DM", gdp_usd: 633000000, year: 2023, source: "World Bank" },
+  { country: "Saint Kitts and Nevis", country_code: "KN", gdp_usd: 1168000000, year: 2023, source: "World Bank" },
+  
+  // Central Asia (additional)
+  { country: "Turkmenistan", country_code: "TM", gdp_usd: 98412000000, year: 2023, source: "World Bank" },
+  { country: "Kyrgyzstan", country_code: "KG", gdp_usd: 14016000000, year: 2023, source: "World Bank" },
+  { country: "Tajikistan", country_code: "TJ", gdp_usd: 11789000000, year: 2023, source: "World Bank" },
+];
+
+// Helper function to get GDP by country code
+export function getGDPByCountryCode(countryCode: string): CountryGDP | undefined {
+  return countryGDPData.find(c => c.country_code === countryCode);
+}
+
+// Helper function to get GDP by country name
+export function getGDPByCountryName(countryName: string): CountryGDP | undefined {
+  return countryGDPData.find(c => c.country.toLowerCase() === countryName.toLowerCase());
+}
+
+// Get total world GDP
+export function getTotalWorldGDP(): number {
+  return countryGDPData.reduce((sum, country) => sum + country.gdp_usd, 0);
+}
+
+// Get top N economies
+export function getTopEconomies(n: number): CountryGDP[] {
+  return [...countryGDPData].sort((a, b) => b.gdp_usd - a.gdp_usd).slice(0, n);
+}

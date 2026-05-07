@@ -1,0 +1,44 @@
+{
+  "_comment": "PLACEHOLDER — This file will be populated by running: npx tsx src/scripts/runSECBaseline.ts",
+  "_status": "not-yet-run",
+  "_warning": "All scores, tiers, and grades in this file are FABRICATED until a live pipeline run completes. Do NOT display these values as real data.",
+  "baselineRunId": null,
+  "scope": "not-yet-run",
+  "runMeta": {
+    "runId": null,
+    "runDate": null,
+    "phase": null,
+    "mode": null,
+    "durationSeconds": null,
+    "companiesEntered": 0,
+    "companiesProcessed": 0
+  },
+  "pipelineFunnel": {
+    "entered": 0,
+    "secPathEntered": 0,
+    "filingRetrieved": 0,
+    "structuredParsed": 0,
+    "materiallySpecific": 0
+  },
+  "summary": {
+    "totalCompanies": 0,
+    "completedCompanies": 0,
+    "failedCompanies": 0,
+    "skippedCompanies": 0,
+    "enteredSECPath": 0,
+    "retrievalSucceeded": 0,
+    "structuredParsingSucceeded": 0,
+    "narrativeParsingSucceeded": 0,
+    "materiallySpecific": 0,
+    "fallbackDominant": 0,
+    "averageConfidenceScore": 0,
+    "gradeDistribution": {
+      "A": 0,
+      "B": 0,
+      "C": 0,
+      "D": 0,
+      "F": 0
+    }
+  },
+  "results": []
+}

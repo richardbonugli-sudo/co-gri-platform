@@ -1,0 +1,506 @@
+# -----------------------------------------------------------------------------
+# CO-GRI Platform - Global Baseline
+# -----------------------------------------------------------------------------
+#
+# Runs the global baseline script against live exchange portals and FMP API,
+# then commits the results back to docs/global-baseline-results/ in the repo.
+#
+# What it does:
+#   1. Normalizes tickers to Yahoo Finance format (exchange suffix + zero-padding)
+#   2. Fetches financial data from FMP API (income statement, balance sheet,
+#      key metrics, geographic revenue segmentation)
+#   3. Fetches annual reports from exchange portals:
+#        HKEX (HKG), CVM/B3 (BVMF), LSE/GLEIF (LSE), SGX, TWSE MOPS (TAI), SEDAR+ (TSE)
+#      Commodity trusts (PHYS, PSLV, SPPP, U.UN): NAV data only
+#      GDR (HSBK): Halyk Bank IR page
+#      ADR equivalents (PETR3->PBR, VALE3->VALE, RIO.L->RIO, SHEL.L->SHEL): reuse SEC data
+#   4. Parses structured data (revenue, PP&E, debt, geographic segments)
+#   5. Extracts geographic narrative segments via local regex + OpenAI
+#   6. Assigns evidence tiers and composite confidence scores
+#   7. Writes results to docs/global-baseline-results/ and commits them
+#
+# Required GitHub Secrets:
+#   FMP_API_KEY       - Financial Modeling Prep API key (financial data)
+#   OPENAI_API_KEY    - Required for narrative parsing via extract_geographic_narrative
+#                       edge function. Without this, narrative parsing is skipped and
+#                       local regex extraction provides baseline coverage.
+#   SUPABASE_URL      - Supabase project URL (for extract_geographic_narrative edge fn)
+#   SUPABASE_ANON_KEY - Supabase anon key
+#
+# Manual trigger only (no schedule - runs take 15-45 min depending on exchange):
+#   GitHub UI -> Actions -> "Global Baseline" -> Run workflow
+#
+# Timeout / graceful shutdown:
+#   Hard limit is 90 min. The script is wrapped with a time-budget watchdog that
+#   sends SIGTERM 15 minutes before the hard limit (75 min script budget), giving
+#   the script time to flush checkpoint.json and partial results. All post-processing
+#   steps run with `if: always()` so partial results are always committed and
+#   uploaded as artifacts even if the run was cut short.
+#
+# Exchange coverage:
+#   BVMF (Brazil)         - Yahoo suffix: .SA
+#   HKG  (Hong Kong)      - Yahoo suffix: .HK (zero-padded to 4 digits)
+#   JSE  (South Africa)   - Yahoo suffix: .JO
+#   LSE  (United Kingdom) - Yahoo suffix: .L
+#   SGX  (Singapore)      - Yahoo suffix: .SI
+#   TAI  (Taiwan)         - Yahoo suffix: .TW
+#   TSE  (Canada/Toronto) - Yahoo suffix: .TO (U.UN -> U-UN.TO)
+# -----------------------------------------------------------------------------
+
+name: Global Baseline
+
+on:
+  # Manual trigger only - this job can be long-running and expensive
+  workflow_dispatch:
+    inputs:
+      exchange:
+        description: 'Exchange(s) to process'
+        required: true
+        default: 'ALL'
+        type: choice
+        options:
+          - 'ALL'   # All 31 global baseline companies across all exchanges
+          - 'BVMF'  # Brazil (4 companies: CMIG3, PETR3, RECV3, VALE3)
+          - 'HKG'   # Hong Kong (6 companies: 14, 315, 517, 857, 1919, 2386)
+          - 'JSE'   # South Africa (2 companies: SOL, SSW)
+          - 'LSE'   # United Kingdom (4 companies: GLEN, HSBK, RIO.L, SHEL.L)
+          - 'SGX'   # Singapore (6 companies: A7RU, F34, J36, NS8U, P8Z, TPED)
+          - 'TAI'   # Taiwan (2 companies: 2603, 2609)
+          - 'TSE'   # Canada/Toronto (6 companies: PHYS, POU, PSLV, PXT, SPPP, U.UN)
+      ticker:
+        description: 'Single ticker override (e.g. GLEN) - leave blank for full exchange run'
+        required: false
+        default: ''
+        type: string
+      dry_run:
+        description: 'Dry run (list tickers only, no API calls, no file writes)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  run-global-baseline:
+    name: Run Global Baseline
+    runs-on: ubuntu-latest
+    # 90 minutes hard limit
+    # The script watchdog sends SIGTERM 15 min before this limit so partial
+    # results are flushed and committed before GitHub kills the runner.
+    timeout-minutes: 90
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # Budget = hard limit minus overhead and post-processing buffer (in seconds)
+      # 90 min - 5 min overhead - 10 min post-processing = 75 min = 4500 seconds
+      SCRIPT_BUDGET_SECONDS: 4500
+
+    permissions:
+      contents: write  # Required to commit and push docs/global-baseline-results/
+
+    steps:
+      # -- Step 1: Checkout repository ----------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 1
+
+      # -- Step 2: Setup Node.js -----------------------------------------------
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # -- Step 3: Install dependencies ---------------------------------------
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --prefer-offline --legacy-peer-deps
+          else
+            npm install --legacy-peer-deps
+          fi
+        env:
+          NODE_ENV: development
+
+      # -- Step 4: Validate required secrets ---------------------------------
+      - name: Validate required secrets
+        run: |
+          MISSING=""
+          if [ -z "$FMP_API_KEY" ]; then
+            echo "WARNING: FMP_API_KEY secret is not set"
+            echo "Financial data fetch (income statement, balance sheet, key metrics) will be skipped."
+            echo "Exchange portal fetchers will still run."
+            MISSING="$MISSING FMP_API_KEY"
+          else
+            echo "OK: FMP_API_KEY is available"
+          fi
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "WARNING: SUPABASE_URL secret is not set - LLM narrative parsing will be skipped"
+            MISSING="$MISSING SUPABASE_URL"
+          else
+            echo "OK: SUPABASE_URL is available"
+          fi
+          if [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "WARNING: SUPABASE_ANON_KEY secret is not set - LLM narrative parsing will be skipped"
+            MISSING="$MISSING SUPABASE_ANON_KEY"
+          else
+            echo "OK: SUPABASE_ANON_KEY is available"
+          fi
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "WARNING: OPENAI_API_KEY secret is not set."
+            echo "Narrative parsing will use local regex only."
+            echo "narrativeParsingSucceeded will be false for all companies."
+            MISSING="$MISSING OPENAI_API_KEY"
+          else
+            echo "OK: OPENAI_API_KEY is available"
+          fi
+          if [ -n "$MISSING" ]; then
+            echo "Missing secrets:$MISSING"
+            echo "The run will continue in degraded mode."
+          fi
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      # -- Step 5: Ensure output directories exist ----------------------------
+      - name: Ensure output directories exist
+        run: |
+          mkdir -p docs/global-baseline-results/by-exchange
+          mkdir -p public/docs/global-baseline-results/by-exchange
+          if [ ! -f docs/global-baseline-results/.gitkeep ]; then
+            touch docs/global-baseline-results/.gitkeep
+          fi
+          echo "Output directories ready"
+          ls -la docs/global-baseline-results/
+
+      # -- Step 6: Run the global baseline script with reliable timeout enforcement
+      #
+      # WHY setsid + timeout is NOT used here (same reasoning as run-sec-baseline.yml):
+      #   - "npx tsx" is a wrapper process. Sending SIGTERM to the npx PID does
+      #     NOT reliably propagate to the real Node.js worker child process.
+      #   - The Node.js script has a SIGTERM handler that flushes partial results
+      #     before exiting, so the bash watchdog below is just a safety net.
+      #
+      # Time budget breakdown (total hard limit = 90 min):
+      #   4500s (75 min) = script wall-clock budget  -> SIGTERM sent to process
+      #   + 60s (  1 min) = SIGKILL grace window      -> force-kill if still alive
+      #   + 14 min        = commit + upload artifacts -> remaining runner time
+      - name: Run global baseline
+        id: baseline
+        # continue-on-error so post-processing steps always run even on timeout
+        continue-on-error: true
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          SCRIPT_BUDGET_MS: "4500000"
+        run: |
+          # -- Build CLI flags -----------------------------------------------
+          FLAGS=""
+
+          EXCHANGE="${{ github.event.inputs.exchange }}"
+          if [ -n "$EXCHANGE" ] && [ "$EXCHANGE" != "ALL" ]; then
+            FLAGS="$FLAGS --exchange=$EXCHANGE"
+            echo "Exchange filter: $EXCHANGE"
+          else
+            echo "Processing all exchanges (ALL)"
+          fi
+
+          TICKER="${{ github.event.inputs.ticker }}"
+          if [ -n "$TICKER" ]; then
+            FLAGS="$FLAGS --ticker=$TICKER"
+            echo "Single ticker mode: $TICKER"
+          fi
+
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="$FLAGS --dry-run"
+            echo "Running in DRY RUN mode - no API calls, no file writes"
+          fi
+
+          FLAGS="$FLAGS --concurrency=3"
+
+          echo "Running: npx tsx src/scripts/runGlobalBaseline.ts $FLAGS"
+          echo "Wall-clock budget: ${SCRIPT_BUDGET_SECONDS}s (external watchdog)"
+          echo "Internal Node.js budget: ${SCRIPT_BUDGET_MS}ms"
+          echo ""
+
+          # -- Reliable timeout using a bash background watchdog -------------
+          set +e
+
+          # Start the script in the background
+          npx tsx src/scripts/runGlobalBaseline.ts $FLAGS &
+          NODE_PID=$!
+          echo "Node.js script started with PID: $NODE_PID"
+
+          # Start the watchdog in the background
+          (
+            sleep ${SCRIPT_BUDGET_SECONDS}
+            if kill -0 $NODE_PID 2>/dev/null; then
+              echo "[watchdog] Budget reached - sending SIGTERM to PID $NODE_PID"
+              kill -TERM $NODE_PID 2>/dev/null || true
+              sleep 60
+              if kill -0 $NODE_PID 2>/dev/null; then
+                echo "[watchdog] Still alive after 60s - sending SIGKILL to PID $NODE_PID"
+                kill -KILL $NODE_PID 2>/dev/null || true
+              fi
+            fi
+          ) &
+          WATCHDOG_PID=$!
+
+          # Wait for the Node.js script to finish
+          wait $NODE_PID
+          SCRIPT_EXIT=$?
+
+          # Kill the watchdog (it may still be sleeping)
+          kill $WATCHDOG_PID 2>/dev/null || true
+          wait $WATCHDOG_PID 2>/dev/null || true
+
+          set -e
+
+          echo ""
+          echo "Script exit code: $SCRIPT_EXIT"
+
+          if [ $SCRIPT_EXIT -eq 0 ]; then
+            echo "Script completed successfully within time budget"
+            echo "script_status=completed" >> $GITHUB_OUTPUT
+          elif [ $SCRIPT_EXIT -eq 143 ] || [ $SCRIPT_EXIT -eq 130 ]; then
+            # 143 = SIGTERM (128+15), 130 = SIGINT (128+2)
+            echo "Script was gracefully terminated by watchdog (exit $SCRIPT_EXIT)"
+            echo "Partial results flushed by the script's internal SIGTERM handler"
+            echo "script_status=partial" >> $GITHUB_OUTPUT
+            exit 0
+          elif [ $SCRIPT_EXIT -eq 137 ]; then
+            # 137 = SIGKILL (128+9) - script did not exit within 60s grace period
+            echo "WARNING: Script required SIGKILL (did not exit within 60s grace period)"
+            echo "Checkpoint file may still contain partial results from completed companies"
+            echo "script_status=partial" >> $GITHUB_OUTPUT
+            exit 0
+          else
+            echo "Script exited with unexpected code $SCRIPT_EXIT"
+            echo "script_status=failed" >> $GITHUB_OUTPUT
+            exit $SCRIPT_EXIT
+          fi
+
+      # -- Step 7: Check if results were written (runs even on timeout) ------
+      - name: Check for changes
+        id: check_changes
+        # Always run - captures partial results if script was cut short
+        if: always()
+        run: |
+          mkdir -p docs/global-baseline-results
+
+          SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
+          if [ "$SCRIPT_STATUS" = "partial" ]; then
+            echo "NOTE: Script was stopped by time-budget watchdog - checking for partial results"
+          fi
+
+          if git diff --quiet -- docs/global-baseline-results/ 2>/dev/null; then
+            UNTRACKED=$(git ls-files --others --exclude-standard docs/global-baseline-results/ | wc -l)
+            if [ "$UNTRACKED" -gt "0" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "New global-baseline-results files detected ($UNTRACKED untracked files)"
+            else
+              echo "changed=false" >> $GITHUB_OUTPUT
+              echo "No changes detected in docs/global-baseline-results/"
+            fi
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "Changes detected in docs/global-baseline-results/"
+            git diff --stat -- docs/global-baseline-results/ || true
+          fi
+
+          echo ""
+          echo "Files in docs/global-baseline-results/:"
+          ls -lah docs/global-baseline-results/ || echo "(directory empty or missing)"
+          echo ""
+          echo "Files in docs/global-baseline-results/by-exchange/:"
+          ls -lah docs/global-baseline-results/by-exchange/ || echo "(directory empty or missing)"
+
+      # -- Step 8: Copy results to public folder (for Vite static serving) ---
+      - name: Copy results to public folder
+        # Always run so partial results are also served statically
+        if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          mkdir -p public/docs/global-baseline-results/by-exchange
+          if [ -f docs/global-baseline-results/latest.json ]; then
+            cp docs/global-baseline-results/latest.json public/docs/global-baseline-results/latest.json
+            echo "Copied latest.json to public/docs/global-baseline-results/"
+          else
+            echo "docs/global-baseline-results/latest.json not found - skipping copy"
+          fi
+          if [ -f docs/global-baseline-results/latest-summary.md ]; then
+            cp docs/global-baseline-results/latest-summary.md public/docs/global-baseline-results/latest-summary.md
+            echo "Copied latest-summary.md to public/docs/global-baseline-results/"
+          fi
+          # Copy per-exchange results
+          for f in docs/global-baseline-results/by-exchange/*.json; do
+            if [ -f "$f" ]; then
+              cp "$f" public/docs/global-baseline-results/by-exchange/
+              echo "Copied $(basename $f) to public/docs/global-baseline-results/by-exchange/"
+            fi
+          done
+
+      # -- Step 9: Commit and push results (always - captures partial results)
+      - name: Commit and push results
+        # Always run so partial results from a timed-out run are committed
+        if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Pull latest to avoid push conflicts (update-benchmark-data may have pushed)
+          git pull --rebase origin HEAD || true
+
+          git add docs/global-baseline-results/ || true
+          git add public/docs/global-baseline-results/ || true
+
+          if git diff --cached --quiet; then
+            echo "Nothing to commit after staging"
+            exit 0
+          fi
+
+          CHANGED_STAT=$(git diff --cached --stat docs/global-baseline-results/ | tail -1)
+          EXCHANGE="${{ github.event.inputs.exchange }}"
+          TICKER="${{ github.event.inputs.ticker }}"
+          TICKER_NOTE=""
+          if [ -n "$TICKER" ]; then
+            TICKER_NOTE=" (ticker: $TICKER)"
+          fi
+
+          SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
+          STATUS_NOTE=""
+          if [ "$SCRIPT_STATUS" = "partial" ]; then
+            STATUS_NOTE=" [PARTIAL - time budget reached, resume with --resume flag]"
+          fi
+
+          git commit -m "chore(data): global-baseline results - exchange $EXCHANGE$TICKER_NOTE$STATUS_NOTE [skip ci]
+
+          Automated global runtime baseline via GitHub Actions
+          Date: $(date -u '+%Y-%m-%d %H:%M UTC')
+          Exchange: $EXCHANGE$TICKER_NOTE
+          Status: ${SCRIPT_STATUS:-completed}
+          ${CHANGED_STAT}
+
+          Outputs:
+          - docs/global-baseline-results/latest.json                       (always overwritten)
+          - docs/global-baseline-results/latest-summary.md                 (human-readable report)
+          - docs/global-baseline-results/baseline-*.json                   (timestamped archive)
+          - docs/global-baseline-results/checkpoint.json                   (resume support)
+          - docs/global-baseline-results/by-exchange/bvmf-results.json     (per-exchange)
+          - docs/global-baseline-results/by-exchange/hkg-results.json
+          - docs/global-baseline-results/by-exchange/jse-results.json
+          - docs/global-baseline-results/by-exchange/lse-results.json
+          - docs/global-baseline-results/by-exchange/sgx-results.json
+          - docs/global-baseline-results/by-exchange/tai-results.json
+          - docs/global-baseline-results/by-exchange/tse-results.json
+          - public/docs/global-baseline-results/latest.json                (Vite static serving)
+
+          To resume a partial run locally:
+            npx tsx src/scripts/runGlobalBaseline.ts --resume --exchange=$EXCHANGE"
+
+          git push origin HEAD
+          echo "Results committed and pushed successfully (status: ${SCRIPT_STATUS:-completed})"
+
+      # -- Step 10: Upload artifacts (always - captures partial results) ------
+      - name: Upload baseline artifacts
+        if: always() && github.event.inputs.dry_run != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: global-baseline-results-${{ github.run_id }}
+          path: |
+            docs/global-baseline-results/latest.json
+            docs/global-baseline-results/latest-summary.md
+            docs/global-baseline-results/checkpoint.json
+            docs/global-baseline-results/baseline-*.json
+            docs/global-baseline-results/by-exchange/*.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      # -- Step 11: Job summary -----------------------------------------------
+      - name: Job summary
+        if: always()
+        run: |
+          SCRIPT_STATUS="${{ steps.baseline.outputs.script_status }}"
+          CHANGES="${{ steps.check_changes.outputs.changed }}"
+          EXCHANGE="${{ github.event.inputs.exchange }}"
+
+          echo "## Global Baseline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$SCRIPT_STATUS" = "partial" ]; then
+            echo "> **PARTIAL RUN** - Time budget (90 min) was reached. Partial results have been saved and committed." >> $GITHUB_STEP_SUMMARY
+            echo "> To continue from where it left off, run locally with: \`npx tsx src/scripts/runGlobalBaseline.ts --resume\`" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Run date | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| Trigger | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Exchange | ${EXCHANGE:-ALL} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Ticker override | ${{ github.event.inputs.ticker || '(none - full exchange run)' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Dry run | ${{ github.event.inputs.dry_run || 'false' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Script status | ${SCRIPT_STATUS:-unknown} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Changes committed | ${CHANGES:-false} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Hard timeout | 90 min |" >> $GITHUB_STEP_SUMMARY
+          echo "| Graceful shutdown buffer | 15 min before hard limit (75 min script budget) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Output files" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/global-baseline-results/latest.json\` - full or partial results" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/global-baseline-results/latest-summary.md\` - human-readable report" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/global-baseline-results/baseline-[ISO].json\` - timestamped archive" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/global-baseline-results/checkpoint.json\` - resume checkpoint" >> $GITHUB_STEP_SUMMARY
+          echo "- \`docs/global-baseline-results/by-exchange/[exchange]-results.json\` - per-exchange" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Exchange coverage" >> $GITHUB_STEP_SUMMARY
+          echo "| Exchange | Companies | Yahoo Suffix | Notes |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-----------|--------------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| BVMF | 4 | .SA | PETR3/VALE3 reuse SEC ADR data |" >> $GITHUB_STEP_SUMMARY
+          echo "| HKG | 6 | .HK | Zero-padded to 4 digits |" >> $GITHUB_STEP_SUMMARY
+          echo "| JSE | 2 | .JO | South Africa |" >> $GITHUB_STEP_SUMMARY
+          echo "| LSE | 4 | .L | RIO.L/SHEL.L reuse SEC ADR data; HSBK is GDR (Kazakhstan) |" >> $GITHUB_STEP_SUMMARY
+          echo "| SGX | 6 | .SI | Singapore; TPED is Thai company |" >> $GITHUB_STEP_SUMMARY
+          echo "| TAI | 2 | .TW | Taiwan; GPT-4o handles Chinese-language reports |" >> $GITHUB_STEP_SUMMARY
+          echo "| TSE | 6 | .TO | 4 Sprott commodity trusts (NAV only); U.UN -> U-UN.TO |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Notes" >> $GITHUB_STEP_SUMMARY
+          echo "- If status is \`partial\`: results up to the cutoff point are fully usable" >> $GITHUB_STEP_SUMMARY
+          echo "- Resume a partial run: \`npx tsx src/scripts/runGlobalBaseline.ts --resume\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`FMP_API_KEY\` is required for financial data (income statement, balance sheet)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`OPENAI_API_KEY\` is required for LLM narrative parsing" >> $GITHUB_STEP_SUMMARY
+          echo "- Commodity trusts (PHYS, PSLV, SPPP, U.UN): NAV data only, no narrative parsing" >> $GITHUB_STEP_SUMMARY
+          echo "- Commits use \`[skip ci]\` to prevent workflow loops" >> $GITHUB_STEP_SUMMARY
+
+  # -- Failure notification job ----------------------------------------------
+  notify-on-failure:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: run-global-baseline
+    if: failure()
+
+    steps:
+      - name: Create failure issue annotation
+        run: |
+          echo "::error title=Global Baseline Run Failed::The global runtime baseline workflow failed. Check the workflow logs for details."
+          echo "## Global Baseline Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The global baseline run failed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Possible causes:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Missing secrets: FMP_API_KEY not set" >> $GITHUB_STEP_SUMMARY
+          echo "- FMP API rate limiting (HTTP 429) - reduce concurrency and retry" >> $GITHUB_STEP_SUMMARY
+          echo "- OPENAI_API_KEY secret missing or expired" >> $GITHUB_STEP_SUMMARY
+          echo "- Exchange portal (HKEX/CVM/SGX/TWSE/SEDAR+) network timeout" >> $GITHUB_STEP_SUMMARY
+          echo "- SUPABASE_URL or SUPABASE_ANON_KEY missing (LLM parsing skipped)" >> $GITHUB_STEP_SUMMARY
+          echo "- TypeScript compilation error in runGlobalBaseline.ts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Quick fix - test without secrets:**" >> $GITHUB_STEP_SUMMARY
+          echo "Re-run the workflow with dry_run=true to validate the setup without making any API calls." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Action required:** Check the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details." >> $GITHUB_STEP_SUMMARY

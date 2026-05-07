@@ -1,0 +1,300 @@
+/**
+ * V.4 Orchestrator - Main Allocation Engine
+ * 
+ * Implements the complete V.4 decision tree for CO-GRI Step 1 logic.
+ * STEP 1 FIX: Enables RF-B/C/D to fire when closed totals exist (for residual labels)
+ */
+
+import {
+  Channel,
+  EvidenceBundle,
+  AllocationResult,
+  TraceObject,
+  StructuredItem,
+  NarrativeMentions,
+  EntityKind,
+  FallbackType,
+  LabelAllocation
+} from '@/types/v4Types';
+
+import {
+  resolveMembershipForLabel,
+  labelIsCountry,
+  canonicalizeLabel,
+  classifyEntityKind
+} from './labelResolution';
+
+import {
+  findClosedTotalLabels,
+  getTotalRowValueIfAny,
+  inferUnitMode,
+  computeLabelTotalWeight,
+  validateClosedTotal
+} from './closedTotalValidation';
+
+import {
+  decideRFCase_V4,
+  anyGeographyMembershipEvidenceExists,
+  classifyRFTypeForLabel,
+  hasPartialStructuredEvidence
+} from './rfTaxonomy';
+
+import {
+  buildRestrictedSetP,
+  exposurePlausiblyWorldwide
+} from './restrictedSetBuilder';
+
+import {
+  applySSF,
+  applyRF,
+  applyGF,
+  normalizeCountryWeights,
+  mergeAdd,
+  removeAndRenormalize
+} from './allocators';
+
+/**
+ * Main allocation function for a channel (V.4 compliant)
+ * STEP 1 FIX: Enables "Direct + SSF + RF-B/C/D" coexistence
+ */
+export function allocateChannel_V4(evidenceBundle: EvidenceBundle): AllocationResult {
+  
+  const trace: TraceObject = {
+    channel: evidenceBundle.channel,
+    detectedStructured: evidenceBundle.structuredItems,
+    detectedNarrative: evidenceBundle.narrative,
+    stepLog: [],
+    directAlloc: new Map(),
+    labelAllocations: [],
+    finalWeights: new Map()
+  };
+  
+  trace.stepLog.push('STEP0: evidence extracted (structured + narrative + supplementary hints)');
+  
+  // STEP 1 FIX: Identify label totals FIRST (before direct allocation)
+  // This allows us to detect if a COUNTRY entity is actually a bucket/label
+  const closedLabels = findClosedTotalLabels(
+    evidenceBundle.structuredItems,
+    evidenceBundle.narrative.definitions
+  );
+  const hasClosedTotals = closedLabels.size > 0;
+  
+  // STEP 1 — Direct country-level structured evidence
+  // V4: only structured COUNTRY -> numeric value counts as DIRECT
+  // STEP 1 FIX: Exclude countries that have definitions (they're buckets, not direct countries)
+  const direct = new Map<string, number>();
+  let directTotal = 0;
+  
+  for (const item of evidenceBundle.structuredItems) {
+    if (item.entityKind === EntityKind.COUNTRY && !item.isTotalRow) {
+      // STEP 1 FIX: Skip if this country has a definition (it's a bucket/label)
+      if (evidenceBundle.narrative.definitions.has(item.canonicalLabel)) {
+        continue;
+      }
+      
+      const existing = direct.get(item.canonicalLabel) || 0;
+      direct.set(item.canonicalLabel, existing + item.value);
+      directTotal += item.value;
+    }
+  }
+  
+  // Convert direct to weights
+  const directWeights = convertDirectToWeights(
+    direct,
+    evidenceBundle.structuredItems
+  );
+  
+  const lockedCountries = new Set(directWeights.keys());
+  trace.directAlloc = directWeights;
+  trace.stepLog.push('STEP1: direct country-level structured evidence allocated + locked');
+  
+  let countryWeights = new Map(directWeights);
+  
+  const unitMode = inferUnitMode(evidenceBundle.structuredItems);
+  const totalRowValue = getTotalRowValueIfAny(evidenceBundle.structuredItems);
+  
+  // STEP 2/3/4: If closed totals exist, allocate label-by-label
+  if (hasClosedTotals) {
+    trace.stepLog.push('STEP2: closed allocatable label totals detected => label-by-label allocation');
+    
+    for (const label of closedLabels) {
+      const labelTotalWeight = computeLabelTotalWeight(
+        label,
+        evidenceBundle.structuredItems,
+        unitMode,
+        totalRowValue
+      );
+      
+      // STEP 1 FIX: Decide allocation method (SSF or RF-A/B/C/D)
+      const decision = decideLabelAllocationMethod_V4(label, evidenceBundle);
+      
+      if (decision.method === FallbackType.SSF) {
+        // SSF applies ONLY to this label total
+        const members = decision.members;
+        let alloc = applySSF(
+          members,
+          labelTotalWeight,
+          evidenceBundle.sector,
+          evidenceBundle.channel
+        );
+        
+        // Exclude already-allocated countries
+        alloc = removeAndRenormalize(alloc, lockedCountries, labelTotalWeight);
+        
+        countryWeights = mergeAdd(countryWeights, alloc);
+        
+        trace.labelAllocations.push({
+          label,
+          labelTotal: labelTotalWeight,
+          labelUnit: 'weight',
+          fallbackUsed: FallbackType.SSF,
+          membershipSet: members,
+          restrictedSetP: new Set(),
+          exclusionsApplied: lockedCountries,
+          outputCountries: alloc,
+          reason: decision.reason
+        });
+        
+        // Update locked countries
+        for (const country of alloc.keys()) {
+          lockedCountries.add(country);
+        }
+        
+      } else if (decision.method === FallbackType.RF_A) {
+        // RF-A applies ONLY to this label total (conservative, no membership evidence)
+        const built = buildRestrictedSetP(
+          evidenceBundle,
+          lockedCountries,
+          new Set()
+        );
+        
+        const alloc = applyRF(
+          built.P,
+          labelTotalWeight,
+          evidenceBundle.sector,
+          evidenceBundle.channel
+        );
+        
+        countryWeights = mergeAdd(countryWeights, alloc);
+        
+        trace.labelAllocations.push({
+          label,
+          labelTotal: labelTotalWeight,
+          labelUnit: 'weight',
+          fallbackUsed: FallbackType.RF_A,
+          membershipSet: new Set(),
+          restrictedSetP: built.P,
+          exclusionsApplied: lockedCountries,
+          outputCountries: alloc,
+          reason: decision.reason
+        });
+        
+        // Update locked countries
+        for (const country of alloc.keys()) {
+          lockedCountries.add(country);
+        }
+        
+      } else if (decision.method === FallbackType.RF_B) {
+        // STEP 1 FIX: RF-B applies ONLY to this label total (named countries exist)
+        const built = buildRestrictedSetP(
+          evidenceBundle,
+          lockedCountries,
+          new Set()
+        );
+        
+        const alloc = applyRF(
+          built.P,
+          labelTotalWeight,
+          evidenceBundle.sector,
+          evidenceBundle.channel
+        );
+        
+        countryWeights = mergeAdd(countryWeights, alloc);
+        
+        trace.labelAllocations.push({
+          label,
+          labelTotal: labelTotalWeight,
+          labelUnit: 'weight',
+          fallbackUsed: FallbackType.RF_B,
+          membershipSet: new Set(),
+          restrictedSetP: built.P,
+          exclusionsApplied: lockedCountries,
+          outputCountries: alloc,
+          reason: decision.reason
+        });
+        
+        // Update locked countries
+        for (const country of alloc.keys()) {
+          lockedCountries.add(country);
+        }
+        
+      } else if (decision.method === FallbackType.RF_C) {
+        // STEP 1 FIX: RF-C applies ONLY to this label total (geo labels exist)
+        const built = buildRestrictedSetP(
+          evidenceBundle,
+          lockedCountries,
+          new Set()
+        );
+        
+        const alloc = applyRF(
+          built.P,
+          labelTotalWeight,
+          evidenceBundle.sector,
+          evidenceBundle.channel
+        );
+        
+        countryWeights = mergeAdd(countryWeights, alloc);
+        
+        trace.labelAllocations.push({
+          label,
+          labelTotal: labelTotalWeight,
+          labelUnit: 'weight',
+          fallbackUsed: FallbackType.RF_C,
+          membershipSet: new Set(),
+          restrictedSetP: built.P,
+          exclusionsApplied: lockedCountries,
+          outputCountries: alloc,
+          reason: decision.reason
+        });
+        
+        // Update locked countries
+        for (const country of alloc.keys()) {
+          lockedCountries.add(country);
+        }
+        
+      } else if (decision.method === FallbackType.RF_D) {
+        // STEP 1 FIX: RF-D applies ONLY to this label total (partial structured evidence exists)
+        const built = buildRestrictedSetP(
+          evidenceBundle,
+          lockedCountries,
+          new Set()
+        );
+        
+        const alloc = applyRF(
+          built.P,
+          labelTotalWeight,
+          evidenceBundle.sector,
+          evidenceBundle.channel
+        );
+        
+        countryWeights = mergeAdd(countryWeights, alloc);
+        
+        trace.labelAllocations.push({
+          label,
+          labelTotal: labelTotalWeight,
+          labelUnit: 'weight',
+          fallbackUsed: FallbackType.RF_D,
+          membershipSet: new Set(),
+          restrictedSetP: built.P,
+          exclusionsApplied: lockedCountries,
+          outputCountries: alloc,
+          reason: decision.reason
+        });
+        
+        // Update locked countries
+        for (const country of alloc.keys()) {
+          lockedCountries.add(country);
+        }
+      }
+    }
+    

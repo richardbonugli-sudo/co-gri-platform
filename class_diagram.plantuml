@@ -1,0 +1,181 @@
+@startuml GDP-Weighted CSI Classes
+
+skinparam backgroundColor #1a1a1a
+skinparam classBackgroundColor #2a2a2a
+skinparam classBorderColor #4a4a4a
+skinparam packageBackgroundColor #1a1a1a
+skinparam packageBorderColor #3a3a3a
+
+' Interfaces
+interface IGDPDataService {
+  +fetchGDPData(countries: string[]): Promise<GlobalGDPDataset>
+  +getGDPWeights(year: number): Promise<GDPWeightMap>
+  +getCachedWeights(): GDPWeightMap | null
+  +refreshGDPData(): Promise<void>
+  +getDataVintage(): string
+}
+
+interface IGDPWeightedCalculator {
+  +calculateGDPWeightedGlobalCSI(date: Date, timeWindow: string): GlobalCSIResult
+  +calculateGDPWeightedTimeSeries(timeWindow: string, dataPoints: number): GlobalCSITimeSeriesPoint[]
+  +getTopContributors(limit: number): TopContributor[]
+  +compareMetrics(date: Date): MetricComparison
+}
+
+' Main Classes
+class GDPDataService {
+  -cache: Map<string, CountryGDPData>
+  -cacheExpiry: Date
+  -config: GDPDataConfig
+  -staticData: GlobalGDPDataset
+  
+  +constructor(config: GDPDataConfig)
+  +fetchGDPData(countries: string[]): Promise<GlobalGDPDataset>
+  +getGDPWeights(year: number): Promise<GDPWeightMap>
+  +getCachedWeights(): GDPWeightMap | null
+  +refreshGDPData(): Promise<void>
+  +getDataVintage(): string
+  -fetchFromWorldBank(countries: string[]): Promise<any>
+  -fetchFromIMF(countries: string[]): Promise<any>
+  -applyFallbackStrategy(country: string): CountryGDPData
+  -calculateWeights(data: CountryGDPData[]): void
+  -isCacheValid(): boolean
+  -updateCache(data: GlobalGDPDataset): void
+}
+
+class GDPWeightedCalculator {
+  -gdpService: GDPDataService
+  -compositeCalculator: CompositeCalculator
+  -resultCache: Map<string, GlobalCSIResult>
+  
+  +constructor(gdpService: GDPDataService, compositeCalculator: CompositeCalculator)
+  +calculateGDPWeightedGlobalCSI(date: Date, timeWindow: string): GlobalCSIResult
+  +calculateGDPWeightedTimeSeries(timeWindow: string, dataPoints: number): GlobalCSITimeSeriesPoint[]
+  +getTopContributors(limit: number): TopContributor[]
+  +compareMetrics(date: Date): MetricComparison
+  -calculateWeightedSum(countries: string[], weights: GDPWeightMap, date: Date): number
+  -calculateEqualWeightedSum(countries: string[], date: Date): number
+  -interpretDelta(delta: number): string
+  -getCacheKey(date: Date, timeWindow: string): string
+}
+
+class CompositeCalculator {
+  +calculateCompositeCSI(country: string, asOfDate?: Date): CompositeCSI
+  +calculateGlobalCSIAtDate(date: Date): number
+  +calculateExtendedGlobalCSITimeSeries(timeWindow: ExtendedTimeWindow, dataPoints: number): Array<{date: Date; csi: number}>
+  +clearGlobalCSICache(): void
+  +getCSIAtDate(country: string, date: Date): number
+  +calculateMultipleCompositeCSI(countries: string[], asOfDate?: Date): Map<string, CompositeCSI>
+  -applyDecay(event: EventRecord, asOfDate: Date): number
+  -applyGeopoliticalEventDecay(event: GeopoliticalEvent, asOfDate: Date, impactFactor: number): number
+  -getSeverityWeight(severity: string): number
+}
+
+class GlobalCSIStore {
+  -state: GlobalCSIState
+  -gdpCalculator: GDPWeightedCalculator
+  
+  +setSelectedMetric(metric: MetricType): void
+  +setTimeWindow(window: string): void
+  +toggleComparison(): void
+  +toggleExpandedDetails(): void
+  +loadGDPData(): Promise<void>
+  +calculateGlobalCSI(): void
+  +refreshTimeSeries(): void
+  -updateCurrentResult(result: GlobalCSIResult): void
+  -handleError(error: Error): void
+}
+
+' Data Classes
+class CountryGDPData {
+  +country: string
+  +iso3: string
+  +ppp_gdp: number
+  +ppp_gdp_year: number
+  +gdp_weight: number
+  +data_source: 'WorldBank' | 'IMF' | 'Manual'
+  +last_updated: string
+  +confidence: 'High' | 'Medium' | 'Low'
+}
+
+class GlobalGDPDataset {
+  +total_gdp: number
+  +reference_year: number
+  +country_data: CountryGDPData[]
+  +last_sync: string
+  +coverage_percentage: number
+  +data_vintage: string
+}
+
+class GlobalCSIResult {
+  +gdp_weighted_csi: number
+  +gdp_weighted_change: number
+  +gdp_weighted_direction: 'Increasing' | 'Decreasing' | 'Stable'
+  +equal_weighted_csi: number
+  +equal_weighted_change: number
+  +equal_weighted_direction: 'Increasing' | 'Decreasing' | 'Stable'
+  +metric_delta: number
+  +delta_interpretation: string
+  +delta_percentage: number
+  +total_countries: number
+  +gdp_coverage: number
+  +calculation_date: string
+  +time_window: string
+  +gdp_data_year: number
+  +top_contributors: TopContributor[]
+  +data_quality: DataQuality
+}
+
+class TopContributor {
+  +country: string
+  +csi: number
+  +gdp_weight: number
+  +gdp_weight_percentage: string
+  +weighted_contribution: number
+  +contribution_percentage: string
+}
+
+class DataQuality {
+  +gdp_data_confidence: 'High' | 'Medium' | 'Low'
+  +missing_countries: string[]
+  +fallback_used: boolean
+}
+
+class GlobalCSITimeSeriesPoint {
+  +date: Date
+  +gdp_weighted_csi: number
+  +equal_weighted_csi: number
+  +metric_delta: number
+}
+
+class MetricComparison {
+  +gdp_weighted: number
+  +equal_weighted: number
+  +delta: number
+  +delta_interpretation: string
+  +visual_data: VisualData
+}
+
+class VisualData {
+  +gdp_weighted_bar_width: number
+  +equal_weighted_bar_width: number
+}
+
+' Relationships
+IGDPDataService <|.. GDPDataService : implements
+IGDPWeightedCalculator <|.. GDPWeightedCalculator : implements
+
+GDPWeightedCalculator --> GDPDataService : uses
+GDPWeightedCalculator --> CompositeCalculator : uses
+GlobalCSIStore --> GDPWeightedCalculator : uses
+
+GDPDataService --> GlobalGDPDataset : creates
+GDPDataService --> CountryGDPData : manages
+GDPWeightedCalculator --> GlobalCSIResult : produces
+GlobalCSIResult --> TopContributor : contains
+GlobalCSIResult --> DataQuality : contains
+GDPWeightedCalculator --> GlobalCSITimeSeriesPoint : produces
+GDPWeightedCalculator --> MetricComparison : produces
+MetricComparison --> VisualData : contains
+
+@enduml

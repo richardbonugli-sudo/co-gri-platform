@@ -1,0 +1,13 @@
+{
+  "runId": "pending-first-run",
+  "phase": "not-yet-run",
+  "startTime": null,
+  "endTime": null,
+  "durationMs": 0,
+  "totalCompanies": 0,
+  "completedCompanies": 0,
+  "failedCompanies": 0,
+  "skippedCompanies": 0,
+  "results": [],
+  "_status": "placeholder — workflow results committed to GitHub repo but not yet pulled into this build. Use the GitHub loader above to fetch live results."
+}

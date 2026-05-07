@@ -1,0 +1,15 @@
+{
+  "watch": ["server.js"],
+  "ext": "js,json",
+  "ignore": ["node_modules/", "dist/", "app/", "src/"],
+  "delay": 1000,
+  "execMap": {
+    "js": "node"
+  },
+  "events": {
+    "restart": "echo 'Restarting server...'"
+  },
+  "env": {
+    "NODE_ENV": "development"
+  }
+}

@@ -1,0 +1,220 @@
+    // Normalize final weights
+    const final = normalizeCountryWeights(countryWeights);
+    trace.finalWeights = final;
+    trace.stepLog.push('END: direct + SSF + RF-A/B/C/D merged and normalized');
+    
+    return { weights: final, trace };
+  }
+  
+  // NO closed totals => STEP 5 or STEP 6
+  trace.stepLog.push('STEP2: no closed allocatable totals exist');
+  
+  if (anyGeographyMembershipEvidenceExists(evidenceBundle)) {
+    // RF applies to 100% of channel
+    const rfCase = decideRFCase_V4(evidenceBundle);
+    
+    const built = buildRestrictedSetP(
+      evidenceBundle,
+      new Set(),
+      new Set()
+    );
+    
+    const alloc = applyRF(
+      built.P,
+      1.0,
+      evidenceBundle.sector,
+      evidenceBundle.channel
+    );
+    
+    trace.labelAllocations.push({
+      label: '(channel_total)',
+      labelTotal: 1.0,
+      labelUnit: 'weight',
+      fallbackUsed: rfCase,
+      membershipSet: new Set(),
+      restrictedSetP: built.P,
+      exclusionsApplied: new Set(),
+      outputCountries: alloc,
+      reason: 'RF applies to 100% of channel because no closed totals exist but membership evidence exists'
+    });
+    
+    const final = normalizeCountryWeights(alloc);
+    trace.finalWeights = final;
+    trace.stepLog.push('END: RF (100% channel) normalized');
+    
+    return { weights: final, trace };
+  }
+  
+  // Only now GF is allowed
+  if (canUseGF_V4(evidenceBundle)) {
+    const alloc = applyGF(
+      1.0,
+      evidenceBundle.sector,
+      evidenceBundle.channel,
+      evidenceBundle.homeCountry,
+      false
+    );
+    
+    const final = normalizeCountryWeights(alloc);
+    trace.finalWeights = final;
+    trace.stepLog.push('END: GF applied and normalized');
+    
+    return { weights: final, trace };
+  }
+  
+  // GF prohibited by V4
+  trace.stepLog.push('END: GF prohibited by V4; returning empty for review');
+  return { weights: new Map(), trace };
+}
+
+/**
+ * Decide label allocation method (SSF or RF-A/B/C/D)
+ * STEP 1 FIX: Extended to return RF-B/C/D (not just SSF or RF-A)
+ */
+function decideLabelAllocationMethod_V4(
+  label: string,
+  evidenceBundle: EvidenceBundle
+): { method: FallbackType; members: Set<string>; reason: string } {
+  
+  // Try to resolve membership from definitions
+  const mem = resolveMembershipForLabel(
+    label,
+    evidenceBundle.narrative.definitions
+  );
+  
+  if (mem.resolvable) {
+    return {
+      method: FallbackType.SSF,
+      members: mem.members,
+      reason: 'closed total + resolvable membership => SSF'
+    };
+  }
+  
+  // STEP 1 FIX: Membership not resolvable from definitions
+  // Check if we have OTHER membership evidence (narrative, supplementary hints)
+  const hasNamedCountries = evidenceBundle.narrative.namedCountries.size > 0 || 
+                            evidenceBundle.supplementaryMembershipHints.namedCountries.size > 0;
+  
+  const hasGeoLabels = evidenceBundle.narrative.geoLabels.size > 0 || 
+                       evidenceBundle.supplementaryMembershipHints.geoLabels.size > 0;
+  
+  const hasPartialStructured = hasPartialStructuredEvidence(
+    evidenceBundle.structuredItems,
+    evidenceBundle.channel
+  );
+  
+  // Classify RF type for this label using new function
+  const rfType = classifyRFTypeForLabel(label, evidenceBundle);
+  
+  // Return appropriate RF type with reason
+  if (rfType === FallbackType.RF_D) {
+    return {
+      method: FallbackType.RF_D,
+      members: new Set(),
+      reason: 'closed total but membership not resolvable; partial structured evidence exists => RF-D (residual label only)'
+    };
+  } else if (rfType === FallbackType.RF_B) {
+    return {
+      method: FallbackType.RF_B,
+      members: new Set(),
+      reason: 'closed total but membership not resolvable; named countries exist => RF-B (residual label only)'
+    };
+  } else if (rfType === FallbackType.RF_C) {
+    return {
+      method: FallbackType.RF_C,
+      members: new Set(),
+      reason: 'closed total but membership not resolvable; geo labels exist => RF-C (residual label only)'
+    };
+  } else {
+    // RF-A (conservative, no membership evidence)
+    return {
+      method: FallbackType.RF_A,
+      members: new Set(),
+      reason: 'closed total but membership NOT resolvable and no other evidence => RF-A (residual only)'
+    };
+  }
+}
+
+/**
+ * Check if GF can be used (V4 conditions)
+ */
+function canUseGF_V4(evidenceBundle: EvidenceBundle): boolean {
+  const noGeo = !anyGeographyMembershipEvidenceExists(evidenceBundle);
+  
+  const noStructuredGeoLabels = !evidenceBundle.structuredItems.some(item =>
+    [EntityKind.COUNTRY, EntityKind.GEO_LABEL, EntityKind.NONSTANDARD_LABEL].includes(item.entityKind)
+  );
+  
+  const noClosedTotals = findClosedTotalLabels(
+    evidenceBundle.structuredItems,
+    evidenceBundle.narrative.definitions
+  ).size === 0;
+  
+  const worldwidePlausible = exposurePlausiblyWorldwide(
+    evidenceBundle.channel,
+    evidenceBundle.sector
+  );
+  
+  return noGeo && noStructuredGeoLabels && noClosedTotals && worldwidePlausible;
+}
+
+/**
+ * Convert direct country allocations to weights
+ */
+function convertDirectToWeights(
+  direct: Map<string, number>,
+  structuredItems: StructuredItem[]
+): Map<string, number> {
+  
+  const weights = new Map<string, number>();
+  
+  // Check if values are already percentages
+  const firstItem = structuredItems.find(item => 
+    item.entityKind === EntityKind.COUNTRY && !item.isTotalRow
+  );
+  
+  if (!firstItem) {
+    return weights;
+  }
+  
+  if (firstItem.unit === 'pct') {
+    // Already percentages, use as-is
+    return new Map(direct);
+  }
+  
+  // If absolute values, need to convert
+  const totalRowValue = getTotalRowValueIfAny(structuredItems);
+  
+  if (totalRowValue && totalRowValue > 0) {
+    for (const [country, value] of direct.entries()) {
+      weights.set(country, value / totalRowValue);
+    }
+    return weights;
+  }
+  
+  // Otherwise normalize
+  const total = Array.from(direct.values()).reduce((sum, v) => sum + v, 0);
+  if (total > 0) {
+    for (const [country, value] of direct.entries()) {
+      weights.set(country, value / total);
+    }
+  }
+  
+  return weights;
+}
+
+/**
+ * Run Step 1 for all channels (top-level orchestrator)
+ */
+export function runStep1_V4(
+  evidenceBundles: Map<Channel, EvidenceBundle>
+): Map<Channel, AllocationResult> {
+  
+  const results = new Map<Channel, AllocationResult>();
+  
+  for (const [channel, evidence] of evidenceBundles.entries()) {
+    results.set(channel, allocateChannel_V4(evidence));
+  }
+  
+  return results;
+}

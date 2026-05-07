@@ -1,0 +1,1892 @@
+import { useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Loader2, Search, AlertCircle, ChevronDown, ChevronUp, Download, FileText, Lock, Unlock, CheckCircle, Shield, Star, AlertTriangle, Info } from 'lucide-react';
+// V.4 INTEGRATION: Updated import to use V.4-enhanced service
+import { getCompanyGeographicExposure } from '@/services/v34ComprehensiveIntegrationV4';
+import { getCountryShockIndex } from '@/data/globalCountries';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { searchCompanies } from '@/utils/companyDatabase';
+import { generateFallbackSummary } from '@/utils/fallbackSummaryGenerator';
+import { getCountryInsights } from '@/utils/geopoliticalInsights';
+// V.4 INTEGRATION: Import feature flag utilities
+import { getV4Metadata, getRolloutStatus } from '@/config/featureFlags';
+import { calculatePoliticalAlignment } from '@/services/politicalAlignmentService';
+
+interface CompanySearchResult {
+  symbol: string;
+  name: string;
+  exchange: string;
+  sector: string;
+}
+
+interface CountryExposure {
+  country: string;
+  exposureWeight: number;
+  countryShockIndex: number;
+  contribution: number;
+  status?: EvidenceStatus;
+  channel?: string;
+  preNormalizedWeight?: number;
+  channelWeights?: {
+    revenue: number;
+    operations: number;
+    supply: number;
+    assets: number;
+    market: number;
+  };
+  politicalAlignment?: {
+    alignmentFactor: number;
+    relationship: string;
+    source: string;
+  };
+  fallbackType?: FallbackType;
+}
+
+interface CalculationStep {
+  step: string;
+  formula: string;
+  values: Record<string, string | number>;
+  result: number;
+  explanation: string;
+  countryDetails?: string;
+}
+
+interface DataSource {
+  name: string;
+  description: string;
+  url?: string;
+}
+
+interface KeyRisk {
+  country: string;
+  description: string;
+  detail: string;
+  elaboration: string;
+}
+
+interface Recommendation {
+  category: string;
+  action: string;
+  priority: 'High' | 'Medium' | 'Low';
+}
+
+interface ExposureComponents {
+  revenue?: number;
+  operations?: number;
+  supply?: number;
+  assets?: number;
+  market?: number;
+}
+
+type EvidenceStatus = 'evidence' | 'high_confidence_estimate' | 'known_zero' | 'fallback';
+type FallbackType = 'SSF' | 'RF' | 'GF' | 'none';
+type EvidenceLevel = 'direct_evidence' | 'high_confidence' | 'medium_confidence' | 'sector_intelligence' | 'estimate';
+
+type EvidenceType = 'Direct' | 'Structured' | 'Residual';
+
+interface CountryEvidence {
+  country: string;
+  evidenceType: EvidenceType;
+  evidenceSource: string;
+  isLocked: boolean;
+  amount?: number;
+  percentage?: number;
+  rationale?: string;
+}
+
+interface EvidenceTracking {
+  directEvidence: CountryEvidence[];
+  structuredEvidence: CountryEvidence[];
+  residualBucket: CountryEvidence[];
+}
+
+interface SubBucketDistribution {
+  country: string;
+  amount: number;
+  percentage: number;
+  percentageOfBucket: number;
+  rationale: string;
+  isCarveOut: boolean;
+}
+
+interface StructuredBucket {
+  bucketName: string;
+  countries: string[];
+  totalAmount: number;
+  totalPercentage: number;
+  narrativeDefinition: string;
+  subBucketDistribution?: SubBucketDistribution[];
+}
+
+interface FallbackStrategy {
+  directEvidence: {
+    countries: string[];
+    totalAmount: number;
+    totalPercentage: number;
+    isLocked: true;
+    details: Array<{
+      country: string;
+      amount: number;
+      percentage: number;
+      source: string;
+    }>;
+  };
+  structuredEvidence: {
+    buckets: StructuredBucket[];
+    totalAmount: number;
+    totalPercentage: number;
+    isLocked: true;
+  };
+  residualBucket: {
+    totalAmount: number;
+    totalPercentage: number;
+    fallbackType: 'RF' | 'GF';
+    boundedCountrySet?: string[];
+    allocatedCountries: Array<{
+      country: string;
+      amount: number;
+      percentage: number;
+      percentageOfResidual: number;
+      rationale: string;
+    }>;
+    isLocked: false;
+  };
+}
+
+interface ChannelData {
+  weight: number;
+  status: EvidenceStatus;
+  source?: string;
+  fallbackType?: FallbackType;
+  evidenceLevel?: EvidenceLevel;
+  evidenceScore?: number;
+  confidence?: number;
+  evidenceType?: EvidenceType;
+  isLocked?: boolean;
+  fallbackStrategy?: FallbackStrategy;
+}
+
+interface ChannelBreakdown {
+  [country: string]: {
+    revenue?: ChannelData;
+    operations?: ChannelData;
+    supply?: ChannelData;
+    assets?: ChannelData;
+    market?: ChannelData;
+    blended: number;
+    politicalAlignment?: {
+      alignmentFactor: number;
+      relationship: string;
+      source: string;
+    };
+    evidenceTracking?: EvidenceTracking;
+  };
+}
+
+interface AssessmentResult {
+  company: string;
+  symbol: string;
+  sector: string;
+  sectorMultiplier: number;
+  geopoliticalRiskScore: number;
+  riskLevel: string;
+  countryExposures: CountryExposure[];
+  calculationSteps: CalculationStep[];
+  dataSources: DataSource[];
+  keyRisks: KeyRisk[];
+  recommendations: Recommendation[];
+  dataSource?: string;
+  rawScore: number;
+  hasVerifiedData: boolean;
+  geoDataSource: string;
+  hasDetailedComponents?: boolean;
+  sectorClassificationConfidence?: number;
+  sectorClassificationSources?: string[];
+  homeCountry?: string;
+  channelBreakdown?: ChannelBreakdown;
+  exposureCoefficients?: {
+    revenue: number;
+    supply: number;
+    assets: number;
+    financial: number;
+    market: number;
+  };
+  adrResolution?: {
+    isADR: boolean;
+    confidence: 'high' | 'medium' | 'low';
+    source: string;
+  };
+}
+
+interface GeographicSegment {
+  country: string;
+  revenuePercentage?: number;
+  exposureComponents?: ExposureComponents;
+}
+
+interface AutoTableDoc extends jsPDF {
+  lastAutoTable: {
+    finalY: number;
+  };
+}
+
+interface CountryIntelligence {
+  intelligence?: string;
+  expertAnalysis?: string;
+  recentDevelopments?: string;
+}
+
+const SUPPORTED_COUNTRIES = [
+  {
+    name: 'United States',
+    exchanges: 'NASDAQ, NYSE',
+    tickerSuffix: '',
+    color: 'bg-cyan-500'
+  },
+  {
+    name: 'Canada',
+    exchanges: 'TSX, TSX Venture',
+    tickerSuffix: '.TO, .V',
+    color: 'bg-blue-500'
+  },
+  {
+    name: 'United Kingdom',
+    exchanges: 'LSE',
+    tickerSuffix: '.L, .LON',
+    color: 'bg-green-500'
+  },
+  {
+    name: 'Brazil',
+    exchanges: 'B3',
+    tickerSuffix: '.SA',
+    color: 'bg-yellow-500'
+  },
+  {
+    name: 'Hong Kong',
+    exchanges: 'HKEX',
+    tickerSuffix: '.HK',
+    color: 'bg-red-500'
+  },
+  {
+    name: 'Singapore',
+    exchanges: 'SGX',
+    tickerSuffix: '.SI',
+    color: 'bg-purple-500'
+  },
+  {
+    name: 'Taiwan',
+    exchanges: 'TWSE',
+    tickerSuffix: '.TW, .TWO',
+    color: 'bg-indigo-500'
+  },
+  {
+    name: 'South Africa',
+    exchanges: 'JSE',
+    tickerSuffix: '.JO',
+    color: 'bg-pink-500'
+  }
+];
+
+// Country intelligence database
+const COUNTRY_INTELLIGENCE: Record<string, CountryIntelligence> = {
+  'China': {
+    intelligence: 'US-China technology decoupling and semiconductor restrictions; Taiwan Strait tensions and potential military escalation.',
+    expertAnalysis: 'Alex Krainer: China-Russia alliance strengthening through sanctions pressure\nGave: Russia-China-India triangle could create "epic economic boom" combining cheap commodities, low-cost capital, and inexpensive labor',
+    recentDevelopments: '2024: Sanctions designations doubled from 102 to 200\n2024: Aggressive targeting of Taiwan supporters (98 actions vs 10 in 2023)'
+  },
+  'United States': {
+    intelligence: 'Political polarization and election-related instability; Debt ceiling crises and fiscal sustainability concerns.',
+    expertAnalysis: 'Faber: USD dominance under threat from BRICS alternative systems\nKrainer: Asset seizures without due process damaging Western rule of law advantage',
+    recentDevelopments: '2024: Banking sector instability concerns persist\n2024: Cryptocurrency sanctions surged to 967 wallet designations'
+  },
+  'Taiwan': {
+    intelligence: 'Chinese military pressure and invasion threats; Semiconductor supply chain concentration risk.',
+    expertAnalysis: 'Krainer: Taiwan issue driving US-China strategic competition\nSean Foo: Invasion timeline uncertain but military pressure increasing',
+    recentDevelopments: '2024: Increased Chinese military exercises and incursions\n2024: US arms sales and unofficial support continuing'
+  },
+  'Japan': {
+    intelligence: 'Demographic decline and aging population; Massive public debt exceeding 250% of GDP.',
+    expertAnalysis: 'Krainer: Japan\'s massive debt sustainable only through financial repression\nLuongo: BOJ policy constrained by Fed actions and dollar dynamics',
+    recentDevelopments: '2024: Defense spending increases to 2% of GDP target\n2024: Yen weakness prompting currency intervention'
+  }
+};
+
+const getFallbackTypeBadgeColor = (fallbackType?: FallbackType): string => {
+  switch (fallbackType) {
+    case 'SSF':
+      return 'bg-blue-600/20 text-blue-300 border-blue-500';
+    case 'RF':
+      return 'bg-yellow-600/20 text-yellow-300 border-yellow-500';
+    case 'GF':
+      return 'bg-red-600/20 text-red-300 border-red-500';
+    case 'none':
+      return 'bg-green-600/20 text-green-300 border-green-500';
+    default:
+      return 'bg-gray-600/20 text-gray-300 border-gray-500';
+  }
+};
+
+const getFallbackTypeIcon = (fallbackType?: FallbackType): string => {
+  switch (fallbackType) {
+    case 'SSF':
+      return '🔵';
+    case 'RF':
+      return '🟡';
+    case 'GF':
+      return '🔴';
+    case 'none':
+      return '✅';
+    default:
+      return '❓';
+  }
+};
+
+const getEvidenceTypeBadgeColor = (evidenceType: EvidenceType): string => {
+  switch (evidenceType) {
+    case 'Direct':
+      return 'bg-green-600/20 text-green-300 border-green-500';
+    case 'Structured':
+      return 'bg-blue-600/20 text-blue-300 border-blue-500';
+    case 'Residual':
+      return 'bg-yellow-600/20 text-yellow-300 border-yellow-500';
+    default:
+      return 'bg-gray-600/20 text-gray-300 border-gray-500';
+  }
+};
+
+const getEvidenceTypeIcon = (evidenceType: EvidenceType): string => {
+  switch (evidenceType) {
+    case 'Direct':
+      return '🟢';
+    case 'Structured':
+      return '🔵';
+    case 'Residual':
+      return '🟡';
+    default:
+      return '❓';
+  }
+};
+
+const getStatusIcon = (status: EvidenceStatus) => {
+  switch (status) {
+    case 'evidence': return '✅';
+    case 'high_confidence_estimate': return '⭐';
+    case 'known_zero': return '🔒';
+    case 'fallback': return '📊';
+    default: return '❓';
+  }
+};
+
+const getAlignmentIcon = (relationship: string) => {
+  switch (relationship) {
+    case 'allied': return '🤝';
+    case 'friendly': return '😊';
+    case 'neutral': return '😐';
+    case 'competitive': return '⚔️';
+    case 'adversarial': return '⚠️';
+    case 'same': return '🏠';
+    default: return '❓';
+  }
+};
+
+const getRiskColor = (level: string) => {
+  if (level.includes('High')) return 'bg-orange-600';
+  if (level.includes('Moderate')) return 'bg-yellow-600';
+  if (level.includes('Low')) return 'bg-green-600';
+  return 'bg-red-600';
+};
+
+const getContributionColor = (contribution: number): string => {
+  if (contribution >= 10) return 'text-red-400';
+  if (contribution >= 5) return 'text-orange-400';
+  if (contribution >= 2) return 'text-yellow-400';
+  return 'text-green-400';
+};
+
+const getBarColor = (contribution: number): string => {
+  if (contribution >= 15) return '#ef4444';
+  if (contribution >= 10) return '#f97316';
+  if (contribution >= 5) return '#eab308';
+  return '#22c55e';
+};
+
+const getEvidenceBadges = (fallbackType?: FallbackType, status?: EvidenceStatus) => {
+  if (status === 'evidence' || fallbackType === 'none') {
+    return ['■', '■'];
+  } else if (fallbackType === 'SSF') {
+    return ['●', '●'];
+  } else if (fallbackType === 'RF') {
+    return ['■', '●'];
+  } else {
+    return ['◆', '◆'];
+  }
+};
+
+const getBadgeColor = (badge: string, fallbackType?: FallbackType, status?: EvidenceStatus) => {
+  if (badge === '■' && (status === 'evidence' || fallbackType === 'none')) {
+    return 'bg-green-500';
+  } else if (badge === '●') {
+    return 'bg-blue-500';
+  } else if (badge === '■') {
+    return 'bg-yellow-500';
+  } else {
+    return 'bg-gray-500';
+  }
+};
+
+const getAlignmentIconComponent = (alignmentFactor: number) => {
+  if (alignmentFactor >= 0.8) {
+    return <Shield className="w-4 h-4 text-green-400 inline-block mr-1" />;
+  } else if (alignmentFactor >= 0.5) {
+    return <Star className="w-4 h-4 text-yellow-400 inline-block mr-1" />;
+  } else {
+    return <AlertTriangle className="w-4 h-4 text-red-400 inline-block mr-1" />;
+  }
+};
+
+const getRelationshipDetail = (relationship: string): string => {
+  const relationshipUpper = relationship.toUpperCase();
+  switch (relationshipUpper) {
+    case 'SAME':
+    case 'ALLIED':
+      return 'ALLIED: Strong diplomatic ties, shared security interests, deep economic integration (v3.4 Enhanced)';
+    case 'FRIENDLY':
+      return 'FRIENDLY: Positive relations, cooperative on most issues, growing economic ties (v3.4 Enhanced)';
+    case 'NEUTRAL':
+      return 'NEUTRAL: Limited alignment, pragmatic cooperation on select issues (v3.4 Enhanced)';
+    case 'COMPETITIVE':
+      return 'COMPETITIVE: Strategic rivalry, competing interests, limited cooperation (v3.4 Enhanced)';
+    case 'ADVERSARIAL':
+      return 'ADVERSARIAL: Opposing interests, minimal cooperation, potential conflict (v3.4 Enhanced)';
+    default:
+      return 'NEUTRAL: Limited alignment, pragmatic cooperation on select issues (v3.4 Enhanced)';
+  }
+};
+
+const getBusinessImplications = (relationship: string): string => {
+  const relationshipUpper = relationship.toUpperCase();
+  switch (relationshipUpper) {
+    case 'SAME':
+    case 'ALLIED':
+      return 'Stable regulatory environment, predictable policy framework, low expropriation risk, favorable trade terms (v3.4 validated)';
+    case 'FRIENDLY':
+      return 'Generally stable environment, occasional policy differences, growing market access, technology transfer opportunities (v3.4 assessed)';
+    case 'NEUTRAL':
+      return 'Moderate uncertainty, balanced trade policies, selective cooperation, diversification recommended (v3.4 monitored)';
+    case 'COMPETITIVE':
+      return 'Trade policy uncertainty, technology transfer restrictions, market access challenges, supply chain vulnerabilities, regulatory scrutiny (v3.4 enhanced monitoring)';
+    case 'ADVERSARIAL':
+      return 'High regulatory risk, sanctions exposure, asset seizure concerns, supply chain disruption, market access severely limited (v3.4 critical monitoring)';
+    default:
+      return 'Moderate uncertainty, balanced trade policies, selective cooperation, diversification recommended (v3.4 monitored)';
+  }
+};
+
+// Helper function to get risk zone description
+const getRiskZone = (csi: number): { zone: string; description: string } => {
+  if (csi >= 70) {
+    return {
+      zone: 'High Risk Zone',
+      description: 'This country demonstrates significant geopolitical challenges including political instability, elevated corruption levels, weak rule of law, regional conflicts, or substantial sanctions exposure. Business operations may encounter frequent disruptions, regulatory uncertainty, currency fluctuations, supply chain vulnerabilities, and heightened compliance requirements.'
+    };
+  } else if (csi >= 50) {
+    return {
+      zone: 'Moderate Risk Zone',
+      description: 'This country shows moderate geopolitical concerns such as political transitions, regional tensions, economic volatility, or emerging regulatory challenges. Companies should monitor political developments closely, maintain contingency plans, and consider diversification strategies to mitigate concentration risk.'
+    };
+  } else if (csi >= 30) {
+    return {
+      zone: 'Low-Moderate Risk Zone',
+      description: 'This country maintains relative stability with established institutions, though some political, economic, or regulatory uncertainties may exist. Standard risk management practices are generally sufficient, though specific sector or regional factors should be monitored.'
+    };
+  } else {
+    return {
+      zone: 'Low Risk Zone',
+      description: 'This country demonstrates minimal geopolitical risk with strong institutions, stable political environment, and predictable regulatory framework. Business operations face limited disruptions, though standard due diligence remains advisable.'
+    };
+  }
+};
+
+// Helper function to get exposure analysis text
+const getExposureAnalysis = (exposureWeight: number, contribution: number): string => {
+  const exposurePercent = exposureWeight * 100;
+  
+  if (exposurePercent >= 20) {
+    return `The ${exposurePercent.toFixed(1)}% blended exposure represents a major strategic market requiring active risk monitoring and mitigation strategies. This exposure contributes ${contribution.toFixed(1)} points to the overall CO-GRI score, representing a critical risk driver that demands immediate strategic attention and comprehensive mitigation planning.`;
+  } else if (exposurePercent >= 10) {
+    return `With ${exposurePercent.toFixed(1)}% blended exposure representing a dominant market position, this concentration creates substantial vulnerability to country-specific shocks. Any adverse geopolitical events could significantly impact overall business performance. Contributing ${contribution.toFixed(1)} points to the overall CO-GRI score, this represents a significant risk factor requiring proactive management and regular monitoring.`;
+  } else if (exposurePercent >= 5) {
+    return `The ${exposurePercent.toFixed(1)}% blended exposure indicates meaningful business presence that warrants ongoing geopolitical risk assessment. With a contribution of ${contribution.toFixed(1)} points to the CO-GRI score, this exposure adds moderate risk that should be incorporated into risk management frameworks.`;
+  } else {
+    return `The ${exposurePercent.toFixed(1)}% blended exposure indicates meaningful business presence that warrants ongoing geopolitical risk assessment. Contributing ${contribution.toFixed(1)} points to the CO-GRI score, this exposure adds incremental risk to the overall profile.`;
+  }
+};
+
+const generateStep1CountryDetails = (
+  countryExposures: CountryExposure[],
+  channelBreakdown: ChannelBreakdown | undefined,
+  exposureCoefficients: { revenue: number; supply: number; assets: number; financial: number; market: number },
+  sector: string
+): string => {
+  const totalCountries = countryExposures.length;
+  let details = `\n\n📊 v3.4 Enhanced Detailed Breakdown:\n\n`;
+  details += `${'═'.repeat(79)}\n\n`;
+  details += `   COMPREHENSIVE COUNTRY-BY-COUNTRY FOUR-CHANNEL EXPOSURE ANALYSIS (v3.4)\n\n`;
+  details += `   WITH DETAILED RATIONALE, DATA SOURCES, FALLBACK TYPES, AND MATHEMATICAL CALCULATIONS\n\n`;
+  details += `${'═'.repeat(79)}\n\n`;
+
+  countryExposures.forEach((exp, index) => {
+    const channelData = channelBreakdown?.[exp.country];
+    if (!channelData) return;
+
+    details += `\n${'═'.repeat(80)}\n\n`;
+    details += `COUNTRY ${index + 1} OF ${totalCountries}: ${exp.country.toUpperCase()}\n\n`;
+    details += `${'═'.repeat(80)}\n\n`;
+
+    if (channelData.revenue) {
+      const revWeight = channelData.revenue.weight * 100;
+      const revContribution = revWeight * exposureCoefficients.revenue;
+      details += `\n🔍 REVENUE CHANNEL ANALYSIS FOR ${exp.country.toUpperCase()}:\n\n`;
+      details += `   Raw Weight: ${revWeight.toFixed(4)}%\n\n`;
+      details += `   Data Quality: ${channelData.revenue.status === 'evidence' ? '✅ EVIDENCE-BASED' : '📊 FALLBACK ESTIMATE'}\n\n`;
+      details += `   Fallback Type: ${getFallbackTypeIcon(channelData.revenue.fallbackType)} ${channelData.revenue.fallbackType || 'none'}`;
+      details += ` - ${channelData.revenue.fallbackType === 'none' ? 'Direct Evidence: Data from structured tables or narrative sources, no fallback needed' : 
+                      channelData.revenue.fallbackType === 'SSF' ? 'Segment-Specific Fallback: Region membership fully known, IndustryDemandProxy within defined region' :
+                      channelData.revenue.fallbackType === 'RF' ? 'Restricted Fallback: Partial geographic information, sector-specific plausibility within restricted set' :
+                      'Global Fallback: No geographic information, GDP + SectorPrior across global universe'}\n\n`;
+      details += `   Primary Source: ${channelData.revenue.status === 'evidence' ? 'SEC 10-K Filing' : `Sector Analysis: ${sector} Revenue Pattern`}\n\n`;
+      details += `\n   📊 REVENUE CHANNEL METHODOLOGY (v3.4):\n\n`;
+      if (channelData.revenue.status === 'evidence') {
+        details += `   • Data extracted from SEC 10-K/20-F Item 1 (Business), Item 8 (Financial Statements & Notes)\n\n`;
+        details += `   • Geographic revenue segments parsed from "Segment Information" footnotes\n\n`;
+        details += `   • Cross-validated with MD&A geographic revenue discussions\n\n`;
+      } else {
+        details += `   • ${channelData.revenue.fallbackType} METHOD: ${
+          channelData.revenue.fallbackType === 'SSF' ? 'GDP × SectorDemand within defined region' :
+          channelData.revenue.fallbackType === 'RF' ? 'GDP × SectorDemand within restricted set' :
+          'GDP × SectorDemand across global universe'
+        }\n\n`;
+        details += `   • Formula: W_revenue = (GDP_c × SectorDemand_c) / Σ(GDP × SectorDemand)\n\n`;
+        details += `   • Confidence Level: ${
+          channelData.revenue.fallbackType === 'SSF' ? 'MEDIUM-HIGH - Sector-specific demand within known region' :
+          channelData.revenue.fallbackType === 'RF' ? 'MEDIUM - Sector-specific demand within restricted set' :
+          'LOW-MEDIUM - Global sector demand distribution'
+        }\n\n`;
+      }
+      details += `\n   💰 REVENUE CHANNEL CALCULATION (v3.4):\n\n`;
+      details += `   Channel Coefficient (α): ${exposureCoefficients.revenue.toFixed(4)}\n\n`;
+      details += `   Raw Channel Weight: ${revWeight.toFixed(6)}%\n\n`;
+      details += `   Weighted Contribution: ${exposureCoefficients.revenue.toFixed(4)} × ${revWeight.toFixed(6)}% = ${revContribution.toFixed(6)}%\n\n`;
+    }
+
+    if (channelData.operations) {
+      const opsWeight = channelData.operations.weight * 100;
+      const opsContribution = opsWeight * exposureCoefficients.financial;
+      details += `\n🔍 OPERATIONS CHANNEL ANALYSIS FOR ${exp.country.toUpperCase()}:\n\n`;
+      details += `   Raw Weight: ${opsWeight.toFixed(4)}%\n\n`;
+      details += `   Data Quality: 📊 FALLBACK ESTIMATE\n\n`;
+      details += `   Fallback Type: ${getFallbackTypeIcon(channelData.operations.fallbackType)} ${channelData.operations.fallbackType || 'SSF'}`;
+      details += ` - Segment-Specific Fallback: Region membership fully known, IndustryDemandProxy within defined region\n\n`;
+      details += `   Primary Source: Sector Analysis: ${sector} Financial Operations Pattern\n\n`;
+      details += `\n   🏭 OPERATIONS/FINANCIAL CHANNEL METHODOLOGY (v3.4):\n\n`;
+      details += `   • SSF METHOD: FinancialDepth × CurrencyReserves within defined region\n\n`;
+      details += `   • Formula: W_operations = (FinancialDepth_c × CurrencyReserves_c) / Σ(FinancialDepth × CurrencyReserves)\n\n`;
+      details += `   • Confidence Level: MEDIUM-HIGH - Financial system depth within known region\n\n`;
+      details += `\n   🏭 OPERATIONS/FINANCIAL CHANNEL CALCULATION (v3.4):\n\n`;
+      details += `   Channel Coefficient (δ): ${exposureCoefficients.financial.toFixed(4)}\n\n`;
+      details += `   Raw Channel Weight: ${opsWeight.toFixed(6)}%\n\n`;
+      details += `   Weighted Contribution: ${exposureCoefficients.financial.toFixed(4)} × ${opsWeight.toFixed(6)}% = ${opsContribution.toFixed(6)}%\n\n`;
+    }
+
+    if (channelData.supply) {
+      const supWeight = channelData.supply.weight * 100;
+      const supContribution = supWeight * exposureCoefficients.supply;
+      details += `\n🔍 SUPPLY CHANNEL ANALYSIS FOR ${exp.country.toUpperCase()}:\n\n`;
+      details += `   Raw Weight: ${supWeight.toFixed(4)}%\n\n`;
+      details += `   Data Quality: 📊 FALLBACK ESTIMATE\n\n`;
+      details += `   Fallback Type: ${getFallbackTypeIcon(channelData.supply.fallbackType)} ${channelData.supply.fallbackType || 'SSF'}`;
+      details += ` - Segment-Specific Fallback: Region membership fully known, IndustryDemandProxy within defined region\n\n`;
+      details += `   Primary Source: Sector Analysis: ${sector} Supply Chain Pattern\n\n`;
+      details += `\n   🚚 SUPPLY CHAIN CHANNEL METHODOLOGY (v3.4):\n\n`;
+      details += `   • SSF METHOD: ImportIntensity × AssemblyCapacity within defined region\n\n`;
+      details += `   • Formula: W_supply = (ImportIntensity_c × AssemblyCapacity_c) / Σ(ImportIntensity × AssemblyCapacity)\n\n`;
+      details += `   • Confidence Level: MEDIUM-HIGH - Sector-specific supply chain within known region\n\n`;
+      details += `\n   🚚 SUPPLY CHAIN CHANNEL CALCULATION (v3.4):\n\n`;
+      details += `   Channel Coefficient (β): ${exposureCoefficients.supply.toFixed(4)}\n\n`;
+      details += `   Raw Channel Weight: ${supWeight.toFixed(6)}%\n\n`;
+      details += `   Weighted Contribution: ${exposureCoefficients.supply.toFixed(4)} × ${supWeight.toFixed(6)}% = ${supContribution.toFixed(6)}%\n\n`;
+    }
+
+    if (channelData.assets) {
+      const assWeight = channelData.assets.weight * 100;
+      const assContribution = assWeight * exposureCoefficients.assets;
+      details += `\n🔍 ASSETS CHANNEL ANALYSIS FOR ${exp.country.toUpperCase()}:\n\n`;
+      details += `   Raw Weight: ${assWeight.toFixed(4)}%\n\n`;
+      details += `   Data Quality: 📊 FALLBACK ESTIMATE\n\n`;
+      details += `   Fallback Type: ${getFallbackTypeIcon(channelData.assets.fallbackType)} ${channelData.assets.fallbackType || 'SSF'}`;
+      details += ` - Segment-Specific Fallback: Region membership fully known, IndustryDemandProxy within defined region\n\n`;
+      details += `   Primary Source: Sector Analysis: ${sector} Asset Location Pattern\n\n`;
+      details += `\n   🏢 PHYSICAL ASSETS CHANNEL METHODOLOGY (v3.4):\n\n`;
+      details += `   • SSF METHOD: GDP × AssetIntensity within defined region\n\n`;
+      details += `   • Formula: W_assets = (GDP_c × AssetIntensity_c) / Σ(GDP × AssetIntensity)\n\n`;
+      details += `   • Confidence Level: MEDIUM-HIGH - Sector-specific asset deployment within known region\n\n`;
+      details += `\n   🏢 PHYSICAL ASSETS CHANNEL CALCULATION (v3.4):\n\n`;
+      details += `   Channel Coefficient (γ): ${exposureCoefficients.assets.toFixed(4)}\n\n`;
+      details += `   Raw Channel Weight: ${assWeight.toFixed(6)}%\n\n`;
+      details += `   Weighted Contribution: ${exposureCoefficients.assets.toFixed(4)} × ${assWeight.toFixed(6)}% = ${assContribution.toFixed(6)}%\n\n`;
+    }
+
+    const revContrib = (channelData.revenue?.weight || 0) * exposureCoefficients.revenue;
+    const opsContrib = (channelData.operations?.weight || 0) * exposureCoefficients.financial;
+    const supContrib = (channelData.supply?.weight || 0) * exposureCoefficients.supply;
+    const assContrib = (channelData.assets?.weight || 0) * exposureCoefficients.assets;
+    const blendedWeight = (revContrib + opsContrib + supContrib + assContrib) * 100;
+
+    details += `\n   ⚖️ FOUR-CHANNEL BLENDED WEIGHT CALCULATION (v3.4):\n\n`;
+    details += `   Formula: W_blended = α×W_revenue + β×W_supply + γ×W_assets + δ×W_financial\n\n`;
+    details += `   W_blended = ${revContrib.toFixed(6)}% + ${supContrib.toFixed(6)}% + ${assContrib.toFixed(6)}% + ${opsContrib.toFixed(6)}%\n\n`;
+    details += `   ✅ BLENDED WEIGHT = ${blendedWeight.toFixed(6)}%\n\n`;
+
+    if (exp.politicalAlignment) {
+      details += `\n   🌐 POLITICAL ALIGNMENT ANALYSIS (v3.4):\n\n`;
+      details += `   Alignment Factor (A_c): ${exp.politicalAlignment.alignmentFactor.toFixed(4)}\n\n`;
+      details += `   Relationship Type: ${exp.politicalAlignment.relationship.toUpperCase()}\n\n`;
+      details += `   Data Source: ${exp.politicalAlignment.source}\n\n`;
+    }
+
+    details += `\n   ╔${'═'.repeat(71)}╗\n`;
+    details += `   ║  SUMMARY: ${exp.country.toUpperCase()} EXPOSURE PROFILE (v3.4)${' '.repeat(Math.max(0, 71 - 35 - exp.country.length))}║\n`;
+    details += `   ╠${'═'.repeat(71)}╣\n`;
+    details += `   ║  Pre-Normalized Blended Weight: ${blendedWeight.toFixed(4)}%${' '.repeat(Math.max(0, 71 - 37 - blendedWeight.toFixed(4).length))}║\n`;
+    details += `   ║  Revenue Contribution: ${revContrib.toFixed(4)}% [${getFallbackTypeIcon(channelData.revenue?.fallbackType)} ${channelData.revenue?.fallbackType || 'none'}]${' '.repeat(Math.max(0, 71 - 30 - revContrib.toFixed(4).length - (channelData.revenue?.fallbackType || 'none').length))}║\n`;
+    details += `   ║  Operations Contribution: ${opsContrib.toFixed(4)}% [${getFallbackTypeIcon(channelData.operations?.fallbackType)} ${channelData.operations?.fallbackType || 'SSF'}]${' '.repeat(Math.max(0, 71 - 33 - opsContrib.toFixed(4).length - (channelData.operations?.fallbackType || 'SSF').length))}║\n`;
+    details += `   ║  Supply Contribution: ${supContrib.toFixed(4)}% [${getFallbackTypeIcon(channelData.supply?.fallbackType)} ${channelData.supply?.fallbackType || 'SSF'}]${' '.repeat(Math.max(0, 71 - 27 - supContrib.toFixed(4).length - (channelData.supply?.fallbackType || 'SSF').length))}║\n`;
+    details += `   ║  Assets Contribution: ${assContrib.toFixed(4)}% [${getFallbackTypeIcon(channelData.assets?.fallbackType)} ${channelData.assets?.fallbackType || 'SSF'}]${' '.repeat(Math.max(0, 71 - 27 - assContrib.toFixed(4).length - (channelData.assets?.fallbackType || 'SSF').length))}║\n`;
+    if (exp.politicalAlignment) {
+      details += `   ║  Political Alignment: ${exp.politicalAlignment.alignmentFactor.toFixed(4)} (${exp.politicalAlignment.relationship})${' '.repeat(Math.max(0, 71 - 28 - exp.politicalAlignment.alignmentFactor.toFixed(4).length - exp.politicalAlignment.relationship.length))}║\n`;
+    }
+    details += `   ╚${'═'.repeat(71)}╝\n`;
+  });
+
+  return details;
+};
+
+const generateStep2CountryDetails = (
+  countryExposuresPreNorm: CountryExposure[],
+  countryExposures: CountryExposure[],
+  totalExposurePreNorm: number
+): string => {
+  const normalizationFactor = totalExposurePreNorm > 0 ? 1.0 / totalExposurePreNorm : 1.0;
+  const preNormTotal = totalExposurePreNorm * 100;
+
+  let details = `\n\n📊 v3.4 Enhanced Detailed Breakdown:\n\n`;
+  details += `Normalization Factor = 1 / ${preNormTotal.toFixed(4)}% = ${normalizationFactor.toFixed(6)}\n\n`;
+  details += `${'═'.repeat(3)} COUNTRY-BY-COUNTRY NORMALIZATION (v3.4) ${'═'.repeat(3)}\n\n`;
+
+  countryExposures.forEach((ce, idx) => {
+    const preNorm = (countryExposuresPreNorm[idx]?.preNormalizedWeight || countryExposuresPreNorm[idx]?.exposureWeight || 0) * 100;
+    const postNorm = ce.exposureWeight * 100;
+    const change = preNorm > 0 ? ((postNorm - preNorm) / preNorm) * 100 : 0;
+
+    details += `${ce.country}:\n`;
+    details += `   Pre-Normalization:  ${preNorm.toFixed(4)}%\n`;
+    details += `   Post-Normalization: ${postNorm.toFixed(4)}%\n`;
+    details += `   Change: ${change >= 0 ? '+' : ''}${change.toFixed(2)}%\n\n`;
+  });
+
+  return details;
+};
+
+const generateStep3CSIDetails = (
+  countryExposures: CountryExposure[]
+): string => {
+  let details = `\n\n📊 v3.4 Enhanced Detailed Breakdown:\n\n`;
+
+  countryExposures.forEach(ce => {
+    details += `${ce.country}: CSI = ${ce.countryShockIndex.toFixed(1)} (from CedarOwl database v3.4)\n\n`;
+  });
+
+  return details;
+};
+
+const generateStep4PoliticalAlignmentDetails = (
+  countryExposures: CountryExposure[]
+): string => {
+  let details = `\n\n📊 v3.4 Enhanced Detailed Breakdown:\n\n`;
+  
+  details += `${'═'.repeat(79)}\n\n`;
+  details += `   v3.4 ENHANCED POLITICAL ALIGNMENT ANALYSIS FOR EACH COUNTRY\n\n`;
+  details += `   Including Data Sources, Mathematical Formulas, Rationale, and Business Implications\n\n`;
+  details += `${'═'.repeat(79)}\n\n`;
+  
+  details += `📚 1. v3.4 ENHANCED DATA SOURCE DOCUMENTATION\n\n`;
+  details += `   ${'═'.repeat(75)}\n\n`;
+  details += `   A. UN General Assembly Voting Records (Harvard Dataverse) - v3.4 Enhanced\n\n`;
+  details += `      • URL: https://dataverse.harvard.edu/dataverse/harvard\n\n`;
+  details += `      • Description: Measures diplomatic alignment through voting similarity on\n\n`;
+  details += `        international issues, resolutions, and policy positions\n\n`;
+  details += `      • v3.4 Enhancement: Weighted by resolution importance and temporal decay\n\n`;
+  details += `      • Data Coverage: 1946-present, updated annually with v3.4 methodology\n\n`;
+  details += `      • Reliability: HIGH - Official UN voting records, peer-reviewed dataset\n\n`;
+  details += `   B. Alliance & Treaty Memberships - v3.4 Enhanced Framework\n\n`;
+  details += `      • Organizations Tracked (v3.4 expanded list):\n\n`;
+  details += `        - NATO (North Atlantic Treaty Organization): Military alliance\n\n`;
+  details += `        - QUAD (Quadrilateral Security Dialogue): US, Japan, India, Australia\n\n`;
+  details += `        - AUKUS: Australia, UK, US security partnership\n\n`;
+  details += `        - USMCA (US-Mexico-Canada Agreement): Trade agreement\n\n`;
+  details += `        - EU (European Union): Political and economic union\n\n`;
+  details += `        - BRICS: Brazil, Russia, India, China, South Africa economic bloc\n\n`;
+  details += `        - SCO (Shanghai Cooperation Organization): Eurasian political alliance\n\n`;
+  details += `        - ASEAN: Association of Southeast Asian Nations\n\n`;
+  details += `        - GCC (Gulf Cooperation Council): Middle Eastern alliance\n\n`;
+  details += `        - MERCOSUR: South American trade bloc\n\n`;
+  details += `        - African Union: Continental union of African states\n\n`;
+  details += `      • v3.4 Enhancement: Dynamic weighting by alliance depth and activity level\n\n`;
+  details += `      • Reliability: HIGH - Official membership records with v3.4 validation\n\n`;
+  details += `   C. Economic Interdependence Metrics - v3.4 Enhanced Integration\n\n`;
+  details += `      • IMF Direction of Trade Statistics (DOTS) - v3.4 Enhanced\n\n`;
+  details += `        - URL: https://data.imf.org/\n\n`;
+  details += `        - Measures: Bilateral trade flows (imports/exports)\n\n`;
+  details += `        - v3.4 Enhancement: Real-time updates and sector-specific analysis\n\n`;
+  details += `        - Frequency: Monthly updates with v3.4 processing\n\n`;
+  details += `      • IMF Coordinated Portfolio Investment Survey (CPIS) - v3.4 Enhanced\n\n`;
+  details += `        - URL: https://data.imf.org/\n\n`;
+  details += `        - Measures: Cross-border holdings of securities\n\n`;
+  details += `        - v3.4 Enhancement: Enhanced granularity and risk weighting\n\n`;
+  details += `        - Frequency: Annual with v3.4 interpolation\n\n`;
+  details += `      • OECD Bilateral Trade and FDI Flows - v3.4 Enhanced\n\n`;
+  details += `        - URL: https://data.oecd.org/\n\n`;
+  details += `        - Measures: Foreign Direct Investment positions and flows\n\n`;
+  details += `        - v3.4 Enhancement: Sector-specific FDI analysis\n\n`;
+  details += `        - Frequency: Quarterly with v3.4 nowcasting\n\n`;
+  
+  details += `📐 2. v3.4 ENHANCED MATHEMATICAL FORMULAS\n\n`;
+  details += `   ${'═'.repeat(75)}\n\n`;
+  details += `   Political Alignment Amplifier Formula (v3.4 Enhanced):\n\n`;
+  details += `   \n`;
+  details += `   Alignment Amplifier = 1.0 + 0.5 × (1.0 - A_c)\n\n`;
+  details += `   \n`;
+  details += `   Where (v3.4 Enhanced):\n`;
+  details += `   • A_c = Political Alignment Factor (range: 0.0 to 1.0, v3.4 calibrated)\n\n`;
+  details += `   • 1.0 = Baseline (no amplification)\n\n`;
+  details += `   • 0.5 = Maximum amplification coefficient (v3.4 validated)\n\n`;
+  details += `   • (1.0 - A_c) = Inverse alignment (higher when less aligned)\n\n`;
+  details += `   \n`;
+  details += `   v3.4 Enhanced Alignment Factor Calculation:\n`;
+  details += `   A_c = (0.40 × UN_Voting_Similarity_v34) + \n`;
+  details += `         (0.35 × Alliance_Membership_Score_v34) + \n`;
+  details += `         (0.25 × Economic_Interdependence_Score_v34)\n\n`;
+  details += `   \n`;
+  details += `   Final Contribution Formula (v3.4):\n`;
+  details += `   Contribution = Normalized_Weight × CSI × Alignment_Amplifier_v34\n`;
+  details += `   Contribution = W × S_c × (1.0 + 0.5 × (1.0 - A_c_v34))\n\n`;
+  
+  details += `🎯 3. v3.4 ENHANCED RATIONALE EXPLANATIONS\n\n`;
+  details += `   ${'═'.repeat(75)}\n\n`;
+  details += `   Relationship Categories with Real-World Examples (v3.4 Enhanced):\n\n`;
+  details += `   A. ALLIED (A_c: 0.75-1.0) - v3.4 Enhanced Classification\n\n`;
+  details += `      • Definition: Strong diplomatic ties, shared security interests, deep\n\n`;
+  details += `        economic integration, coordinated foreign policy\n\n`;
+  details += `      • Real-World Examples (v3.4 validated):\n\n`;
+  details += `        - US-UK: "Special Relationship", NATO allies, Five Eyes intelligence\n\n`;
+  details += `        - US-Canada: USMCA, NORAD, integrated supply chains\n\n`;
+  details += `        - US-Australia: ANZUS Treaty, Five Eyes, AUKUS partnership\n\n`;
+  details += `        - France-Germany: EU core, Eurozone, joint military projects\n\n`;
+  details += `      • v3.4 Enhanced Characteristics:\n\n`;
+  details += `        - Treaty allies with mutual defense commitments\n\n`;
+  details += `        - Coordinated voting in international forums (>80% alignment)\n\n`;
+  details += `        - Deep economic integration (>15% of GDP in bilateral trade)\n\n`;
+  details += `        - Regular high-level diplomatic engagement\n\n`;
+  details += `        - v3.4 Factor: Intelligence sharing and defense cooperation\n\n`;
+  details += `      • Risk Impact: MINIMAL - Political alignment reduces geopolitical risk\n\n`;
+  
+  details += `${'═'.repeat(79)}\n\n`;
+  details += `   COUNTRY-BY-COUNTRY DETAILED CALCULATIONS (v3.4 Enhanced)\n\n`;
+  details += `${'═'.repeat(79)}\n\n`;
+  
+  countryExposures.forEach(ce => {
+    const normalizedWeight = ce.exposureWeight * 100;
+    const csi = ce.countryShockIndex;
+    const alignmentFactor = ce.politicalAlignment?.alignmentFactor ?? 1.0;
+    const relationship = ce.politicalAlignment?.relationship ?? 'neutral';
+    const source = ce.politicalAlignment?.source ?? 'Default alignment';
+    
+    const amplifier = 1.0 + 0.5 * (1.0 - alignmentFactor);
+    const baseContribution = normalizedWeight * csi / 100;
+    const finalContribution = baseContribution * amplifier;
+    const alignmentEffect = finalContribution - baseContribution;
+    const percentIncrease = baseContribution > 0 ? (alignmentEffect / baseContribution) * 100 : 0;
+    
+    details += `\n\n${'─'.repeat(80)}\n`;
+    details += `📍 ${ce.country.toUpperCase()} (v3.4 Enhanced Analysis)\n`;
+    details += `${'─'.repeat(80)}\n\n`;
+    
+    details += `📊 BASIC EXPOSURE DATA (v3.4):\n`;
+    details += `   Normalized Weight: ${normalizedWeight.toFixed(4)}%\n`;
+    details += `   Country Shock Index (CSI): ${csi.toFixed(1)}\n\n`;
+    
+    details += `🌐 v3.4 ENHANCED POLITICAL ALIGNMENT DETAILS:\n`;
+    details += `   Alignment Factor (A_c): ${alignmentFactor.toFixed(4)}\n`;
+    details += `   Relationship Type: ${relationship.toUpperCase()}\n`;
+    details += `   Relationship Detail: ${getRelationshipDetail(relationship)}\n`;
+    details += `   Data Sources: ${source} (v3.4 Enhanced)\n\n`;
+    
+    details += `📚 v3.4 ENHANCED DATA SOURCE BREAKDOWN:\n`;
+    details += `   • UN Voting Records: Diplomatic alignment measurement (v3.4 weighted)\n`;
+    details += `   • Alliance Memberships: Shared security frameworks and institutional cooperation (v3.4 dynamic)\n`;
+    details += `   • Economic Ties: Trade and investment interdependence (IMF DOTS, CPIS, OECD FDI) (v3.4 enhanced)\n\n`;
+    
+    details += `⚡ v3.4 ENHANCED RISK AMPLIFICATION CALCULATION:\n`;
+    details += `   Step 1: Calculate Alignment Amplifier (v3.4 Formula)\n`;
+    details += `   Formula: Amplifier = 1.0 + 0.5 × (1.0 - A_c)\n`;
+    details += `   Amplifier = 1.0 + 0.5 × (1.0 - ${alignmentFactor.toFixed(4)})\n`;
+    details += `   Amplifier = 1.0 + 0.5 × ${(1.0 - alignmentFactor).toFixed(4)}\n`;
+    details += `   Amplifier = 1.0 + ${(0.5 * (1.0 - alignmentFactor)).toFixed(4)}\n`;
+    details += `   ✅ v3.4 Alignment Amplifier = ${amplifier.toFixed(4)}\n\n`;
+    
+    details += `💰 v3.4 ENHANCED CONTRIBUTION CALCULATION:\n`;
+    details += `   Step 2: Calculate Base Contribution (without political alignment)\n`;
+    details += `   Formula: Base Contribution = Weight × CSI\n`;
+    details += `   Base Contribution = ${normalizedWeight.toFixed(4)}% × ${csi.toFixed(1)}\n`;
+    details += `   Base Contribution = ${baseContribution.toFixed(4)}\n\n`;
+    details += `   Step 3: Apply v3.4 Enhanced Political Alignment Amplifier\n`;
+    details += `   Formula: Final Contribution = Base × Amplifier_v34\n`;
+    details += `   Final Contribution = ${baseContribution.toFixed(4)} × ${amplifier.toFixed(4)}\n`;
+    details += `   ✅ v3.4 Final Contribution = ${finalContribution.toFixed(4)}\n\n`;
+    
+    details += `📈 v3.4 ENHANCED IMPACT ANALYSIS:\n`;
+    details += `   • Without Political Alignment: ${baseContribution.toFixed(4)} points\n`;
+    details += `   • v3.4 Political Alignment Effect: ${alignmentEffect >= 0 ? '+' : ''}${alignmentEffect.toFixed(4)} points (${percentIncrease.toFixed(1)}% ${alignmentEffect >= 0 ? 'increase' : 'decrease'})\n`;
+    details += `   • Total v3.4 Contribution to CO-GRI: ${finalContribution.toFixed(4)} points\n\n`;
+    
+    details += `🎯 v3.4 ENHANCED BUSINESS IMPLICATIONS:\n`;
+    details += `   ${getBusinessImplications(relationship)}\n\n`;
+  });
+  
+  return details;
+};
+
+const generateStep5AggregationDetails = (
+  countryExposures: CountryExposure[]
+): string => {
+  let details = `\n\n📊 v3.4 Enhanced Detailed Breakdown:\n\n`;
+  details += `${'═'.repeat(3)} v3.4 ENHANCED SUMMING ALL CONTRIBUTIONS ${'═'.repeat(3)}\n\n`;
+  
+  countryExposures.forEach(ce => {
+    details += `${ce.country}: ${ce.contribution.toFixed(4)}\n\n`;
+  });
+  
+  const total = countryExposures.reduce((sum, ce) => sum + ce.contribution, 0);
+  details += `v3.4 Total: ${total.toFixed(4)}\n`;
+  
+  return details;
+};
+
+const generateStep6SectorAdjustmentDetails = (
+  rawScore: number,
+  sectorMultiplier: number,
+  finalScore: number,
+  riskLevel: string
+): string => {
+  let details = `\n\n📊 v3.4 Enhanced Detailed Breakdown:\n\n`;
+  
+  const exactCalculation = rawScore * sectorMultiplier;
+  details += `v3.4 Calculation: ${rawScore.toFixed(4)} × ${sectorMultiplier.toFixed(4)} = ${exactCalculation.toFixed(4)}\n\n`;
+  details += `v3.4 Rounded to one decimal: ${finalScore.toFixed(1)}\n\n`;
+  details += `v3.4 Risk Level: ${riskLevel}\n`;
+  
+  return details;
+};
+
+export default function COGRI() {
+  const [ticker, setTicker] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState<AssessmentResult | null>(null);
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
+  const [expandedCountries, setExpandedCountries] = useState<Record<string, boolean>>({});
+  const [expandedChannels, setExpandedChannels] = useState<Record<string, boolean>>({});
+  const [searchResults, setSearchResults] = useState<CompanySearchResult[]>([]);
+  const [showSearchResults, setShowSearchResults] = useState(false);
+
+  useEffect(() => {
+    if (ticker && ticker.length >= 1) {
+      const results = searchCompanies(ticker);
+      setSearchResults(results?.slice(0, 10) || []);
+      setShowSearchResults(results && results.length > 0);
+    } else {
+      setSearchResults([]);
+      setShowSearchResults(false);
+    }
+  }, [ticker]);
+
+  const handleSearch = async (searchTicker?: string) => {
+    const tickerToSearch = searchTicker || ticker;
+    if (!tickerToSearch || !tickerToSearch.trim()) {
+      setError('Please enter a ticker symbol');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setResult(null);
+    setShowSearchResults(false);
+
+    try {
+      console.log(`[v3.4 COGRI Phase 3] Starting assessment for ${tickerToSearch.toUpperCase()}`);
+      const geoData = await getCompanyGeographicExposure(tickerToSearch.toUpperCase(), undefined, undefined, undefined);
+      
+      if (!geoData || !geoData.segments || geoData.segments.length === 0) {
+        setError(`No geographic exposure data available for ${tickerToSearch.toUpperCase()}. Please try another ticker.`);
+        setLoading(false);
+        return;
+      }
+
+      console.log(`[v3.4 COGRI Phase 3] Geographic data retrieved with sub-bucket distribution`);
+
+      const exposureCoefficients = {
+        revenue: 0.40,
+        supply: 0.35,
+        assets: 0.15,
+        financial: 0.10,
+        market: 0.00
+      };
+
+      const countryExposuresPreNorm: CountryExposure[] = [];
+      
+      for (const segment of geoData.segments) {
+        const country = segment.country;
+        const csi = getCountryShockIndex(country);
+        
+        const channelData = geoData.channelBreakdown?.[country];
+        
+        if (channelData) {
+          const blendedWeight = channelData.blended;
+          const fallbackType = channelData.revenue?.fallbackType || 'none';
+          const alignmentFactor = channelData.politicalAlignment?.alignmentFactor ?? 1.0;
+          const contribution = blendedWeight * csi * (1.0 + 0.5 * (1.0 - alignmentFactor));
+          
+          countryExposuresPreNorm.push({
+            country,
+            exposureWeight: blendedWeight,
+            preNormalizedWeight: blendedWeight,
+            countryShockIndex: csi,
+            contribution: contribution,
+            status: channelData.revenue?.status || 'fallback',
+            fallbackType: fallbackType,
+            channelWeights: {
+              revenue: channelData.revenue?.weight || 0,
+              operations: channelData.operations?.weight || 0,
+              supply: channelData.supply?.weight || 0,
+              assets: channelData.assets?.weight || 0,
+              market: 0
+            },
+            politicalAlignment: channelData.politicalAlignment
+          });
+        } else {
+          const exposureWeight = (segment.revenuePercentage || 0) / 100;
+          const homeCountry = geoData.homeCountry || 'United States';
+          const alignment = calculatePoliticalAlignment(homeCountry, country);
+          const alignmentFactor = alignment.alignmentFactor;
+          const contribution = exposureWeight * csi * (1.0 + 0.5 * (1.0 - alignmentFactor));
+          
+          countryExposuresPreNorm.push({
+            country,
+            exposureWeight: exposureWeight,
+            preNormalizedWeight: exposureWeight,
+            countryShockIndex: csi,
+            contribution: contribution,
+            status: 'fallback',
+            fallbackType: 'GF',
+            politicalAlignment: {
+              alignmentFactor: alignment.alignmentFactor,
+              relationship: alignment.relationship,
+              source: alignment.source
+            }
+          });
+        }
+      }
+
+      const filteredExposures = countryExposuresPreNorm.filter(exp => exp.exposureWeight >= 0.005);
+      const totalExposurePreNorm = filteredExposures.reduce((sum, exp) => sum + exp.exposureWeight, 0);
+      
+      const countryExposures: CountryExposure[] = filteredExposures.map(exp => {
+        const normalizedWeight = totalExposurePreNorm > 0 ? exp.exposureWeight / totalExposurePreNorm : 0;
+        const alignmentFactor = exp.politicalAlignment?.alignmentFactor ?? 1.0;
+        const normalizedContribution = normalizedWeight * exp.countryShockIndex * (1.0 + 0.5 * (1.0 - alignmentFactor));
+        
+        return {
+          ...exp,
+          exposureWeight: normalizedWeight,
+          contribution: normalizedContribution
+        };
+      });
+
+      const rawScore = countryExposures.reduce((sum, exp) => sum + exp.contribution, 0);
+      const sectorMultiplier = geoData.sectorMultiplier || 1.0;
+      const finalScore = Math.round(rawScore * sectorMultiplier * 10) / 10;
+
+      let riskLevel = 'Low Risk';
+      if (finalScore >= 60) riskLevel = 'Very High Risk';
+      else if (finalScore >= 45) riskLevel = 'High Risk';
+      else if (finalScore >= 30) riskLevel = 'Moderate Risk';
+
+      const topRisks = [...countryExposures]
+        .sort((a, b) => b.contribution - a.contribution)
+        .slice(0, 5);
+
+      const keyRisks: KeyRisk[] = topRisks.map(exp => ({
+        country: exp.country,
+        description: `${exp.country} Geopolitical Risk Exposure`,
+        detail: `Blended exposure of ${(exp.exposureWeight * 100).toFixed(1)}% contributes ${exp.contribution.toFixed(1)} points`,
+        elaboration: `Risk analysis for ${exp.country}`
+      }));
+
+      const recommendations: Recommendation[] = [];
+      
+      if (finalScore >= 45) {
+        recommendations.push({
+          category: 'Diversification',
+          action: 'Consider geographic diversification to reduce concentration in high-risk markets',
+          priority: 'High'
+        });
+      }
+      
+      if (finalScore >= 30) {
+        const topCountry = countryExposures[0]?.country;
+        if (topCountry) {
+          recommendations.push({
+            category: 'Risk Monitoring',
+            action: `Closely monitor geopolitical developments in ${topCountry}`,
+            priority: 'High'
+          });
+        }
+      }
+      
+      recommendations.push({
+        category: 'Hedging',
+        action: 'Evaluate currency and political risk hedging strategies for top exposure countries',
+        priority: 'High'
+      });
+
+      const calculationSteps: CalculationStep[] = [];
+
+      const step1Details = generateStep1CountryDetails(
+        countryExposures,
+        geoData.channelBreakdown,
+        exposureCoefficients,
+        geoData.sector || 'Unknown'
+      );
+
+      calculationSteps.push({
+        step: 'Step 1: Four-Channel Exposure Weight Calculation with v3.4 Enhanced Fallback Logic',
+        formula: '📐 W_i,c = α×W_revenue + β×W_supply + γ×W_assets + δ×W_financial',
+        values: {
+          'Total Countries': countryExposures.length,
+          'α (Revenue Coefficient)': exposureCoefficients.revenue,
+          'β (Supply Chain Coefficient)': exposureCoefficients.supply,
+          'γ (Assets Coefficient)': exposureCoefficients.assets,
+          'δ (Financial Coefficient)': exposureCoefficients.financial,
+          'Market Channel': 'Removed - political alignment applied in Step 4',
+          'v3.4 Fallback Types': 'SSF (Segment-Specific), RF (Restricted), GF (Global)',
+          'Primary Data Source': 'v3.4 Enhanced Multi-Channel Assessment with Graduated Evidence Scoring + Channel-Specific Logic + Full Database Integration',
+          'Company Sector': geoData.sector || 'Unknown',
+          'v3.4 Methodology': 'Jurisdiction-Aware, Evidence-First, Supplementary-Enhanced'
+        },
+        result: totalExposurePreNorm,
+        explanation: `✓ Calculated four-channel blended exposure weights for ${countryExposures.length} countries using v3.4 enhanced fallback logic`,
+        countryDetails: step1Details
+      });
+
+      const step2Details = generateStep2CountryDetails(
+        filteredExposures,
+        countryExposures,
+        totalExposurePreNorm
+      );
+
+      const normalizationFactor = totalExposurePreNorm > 0 ? 1.0 / totalExposurePreNorm : 1.0;
+      const preNormTotalPercent = totalExposurePreNorm * 100;
+
+      calculationSteps.push({
+        step: '2: Exposure Normalization (v3.4)',
+        formula: '📐 Normalized_W_i,c = W_i,c / Σ(W_i,c)',
+        values: {
+          'Pre-Normalization Total': `${preNormTotalPercent.toFixed(4)}%`,
+          'Post-Normalization Total': '100.0000%',
+          'Normalization Factor': normalizationFactor.toFixed(6),
+          'Countries Normalized': countryExposures.length
+        },
+        result: 100.0,
+        explanation: `✓ Normalized ${countryExposures.length} country exposures to sum to exactly 100%`,
+        countryDetails: step2Details
+      });
+
+      const csiValues = countryExposures.map(ce => ce.countryShockIndex);
+      const averageCSI = csiValues.reduce((sum, csi) => sum + csi, 0) / csiValues.length;
+      const highestCSI = Math.max(...csiValues);
+      const lowestCSI = Math.min(...csiValues);
+      
+      const step3Details = generateStep3CSIDetails(countryExposures);
+
+      calculationSteps.push({
+        step: '3: Country Shock Index (S_c) - v3.4 Enhanced',
+        formula: '📐 S_c = Σ(w_v × R_c,v)',
+        values: {
+          'CSI Range': '0-100',
+          'Countries Assessed': countryExposures.length.toFixed(4),
+          'Average CSI': averageCSI.toFixed(2),
+          'Highest CSI': highestCSI.toFixed(1),
+          'Lowest CSI': lowestCSI.toFixed(1),
+          'Note': 'Base CSI values from CedarOwl global risk database (v3.4 enhanced)'
+        },
+        result: averageCSI,
+        explanation: `✓ Assigned base CSI values for all countries using v3.4 enhanced methodology`,
+        countryDetails: step3Details
+      });
+
+      const contributions = countryExposures.map(ce => ce.contribution);
+      const highestContribution = Math.max(...contributions);
+      const lowestContribution = Math.min(...contributions);
+      
+      const step4Details = generateStep4PoliticalAlignmentDetails(countryExposures);
+
+      calculationSteps.push({
+        step: '4: Weighted Risk Contribution with v3.4 Enhanced Political Alignment Analysis',
+        formula: '📐 Contribution_c = Normalized_W_i,c × S_c × (1.0 + 0.5*(1.0 – A_c))',
+        values: {
+          'Total Contributions': countryExposures.length.toFixed(4),
+          'Highest Contribution': highestContribution.toFixed(4),
+          'Lowest Contribution': lowestContribution.toFixed(4),
+          'Note': 'Political alignment (A_c) with v3.4 enhanced data sources and detailed calculations'
+        },
+        result: rawScore,
+        explanation: `✓ Calculated ${countryExposures.length} weighted country risk contributions using v3.4 enhanced political alignment analysis`,
+        countryDetails: step4Details
+      });
+
+      const sumOfContributions = countryExposures.reduce((sum, ce) => sum + ce.contribution, 0);
+      const step5Details = generateStep5AggregationDetails(countryExposures);
+
+      calculationSteps.push({
+        step: '5: Raw CO-GRI Score Aggregation (v3.4)',
+        formula: '📐 Raw_Score = Σ(Contribution_c)',
+        values: {
+          'Sum of Contributions': sumOfContributions.toFixed(4),
+          'Number of Countries': countryExposures.length.toFixed(4),
+          'Weighted Average CSI': sumOfContributions.toFixed(2),
+          'v3.4 Enhancement': 'Enhanced aggregation with improved precision'
+        },
+        result: sumOfContributions,
+        explanation: `✓ v3.4 Raw CO-GRI Score = ${sumOfContributions.toFixed(2)}`,
+        countryDetails: step5Details
+      });
+
+      const step6Details = generateStep6SectorAdjustmentDetails(
+        rawScore,
+        sectorMultiplier,
+        finalScore,
+        riskLevel
+      );
+
+      calculationSteps.push({
+        step: '6: Sector Risk Adjustment (v3.4 Enhanced)',
+        formula: '📐 Final_Score = Raw_Score × M_sector',
+        values: {
+          'Raw Score': rawScore.toFixed(4),
+          'Sector': geoData.sector || 'Unknown',
+          'Sector Multiplier (M_sector)': sectorMultiplier.toFixed(4),
+          'Final Score (Rounded)': finalScore.toFixed(1),
+          'v3.4 Enhancement': 'Sector-specific calibration with enhanced precision'
+        },
+        result: finalScore,
+        explanation: `✓ v3.4 Final CO-GRI Score = ${finalScore.toFixed(1)} (${riskLevel})`,
+        countryDetails: step6Details
+      });
+
+      calculationSteps.push({
+        step: 'Step 7: Sector Multiplier Application',
+        formula: 'Final Score = Raw Score × Sector Multiplier',
+        values: {
+          'Raw Score': rawScore,
+          'Sector': geoData.sector || 'Unknown',
+          'Sector Multiplier': sectorMultiplier,
+          'Risk Level': riskLevel
+        },
+        result: finalScore,
+        explanation: `Applied ${geoData.sector || 'Unknown'} sector multiplier (${sectorMultiplier.toFixed(2)}x) to calculate final geopolitical risk score`
+      });
+
+      setResult({
+        company: geoData.company || tickerToSearch.toUpperCase(),
+        symbol: tickerToSearch.toUpperCase(),
+        sector: geoData.sector || 'Unknown',
+        sectorMultiplier: sectorMultiplier,
+        geopoliticalRiskScore: finalScore,
+        riskLevel: riskLevel,
+        countryExposures: countryExposures,
+        calculationSteps: calculationSteps,
+        dataSources: [],
+        keyRisks: keyRisks,
+        recommendations: recommendations,
+        rawScore: rawScore,
+        hasVerifiedData: geoData.hasVerifiedData || false,
+        geoDataSource: geoData.dataSource || 'v3.4 Phase 3',
+        homeCountry: geoData.homeCountry,
+        channelBreakdown: geoData.channelBreakdown,
+        exposureCoefficients: exposureCoefficients,
+        adrResolution: geoData.adrResolution
+      });
+
+    } catch (err) {
+      console.error('[v3.4 COGRI Phase 3] Error:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompanySelect = (company: CompanySearchResult) => {
+    setShowSearchResults(false);
+    setTicker(company.symbol);
+    setTimeout(() => handleSearch(company.symbol), 0);
+  };
+
+  const toggleCountryExpansion = (country: string) => {
+    setExpandedCountries(prev => ({
+      ...prev,
+      [country]: !prev[country]
+    }));
+  };
+
+  const toggleChannelExpansion = (channel: string) => {
+    setExpandedChannels(prev => ({
+      ...prev,
+      [channel]: !prev[channel]
+    }));
+  };
+
+  const toggleStepExpansion = (stepIndex: number) => {
+    setExpandedSteps(prev => ({
+      ...prev,
+      [stepIndex]: !prev[stepIndex]
+    }));
+  };
+
+  const getPriorityBadgeColor = (priority: 'High' | 'Medium' | 'Low') => {
+    switch (priority) {
+      case 'High':
+        return 'bg-red-600/20 text-red-300 border-red-500';
+      case 'Medium':
+        return 'bg-yellow-600/20 text-yellow-300 border-yellow-500';
+      case 'Low':
+        return 'bg-blue-600/20 text-blue-300 border-blue-500';
+      default:
+        return 'bg-gray-600/20 text-gray-300 border-gray-500';
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0f1e2e] text-white">
+      <header className="bg-[#0d5f5f] py-4 px-8 border-b border-gray-700">
+        <div className="max-w-7xl mx-auto">
+          <a href="/" className="inline-block">
+            <Button variant="ghost" className="text-white hover:bg-[#0a4d4d] gap-2">
+              <span className="font-semibold">Back to Home</span>
+            </Button>
+          </a>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-8 py-8">
+        <div className="text-center mb-12">
+          <h1 className="text-4xl md:text-5xl font-bold mb-4">
+            Assess a Company or Ticker
+          </h1>
+          <p className="text-xl text-gray-200 max-w-3xl mx-auto">
+            Enter a stock ticker symbol to calculate its geopolitical risk exposure with three-tier fallback analysis
+          </p>
+        </div>
+
+        <Card className="max-w-4xl mx-auto mb-8 bg-[#0f1e2e] border-gray-700">
+          <CardContent className="pt-6">
+            <div className="space-y-4">
+              <div className="relative">
+                <Input
+                  type="text"
+                  placeholder="Enter ticker (e.g., AAPL, MSFT, TSLA)"
+                  value={ticker}
+                  onChange={(e) => setTicker(e.target.value.toUpperCase())}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                  className="bg-[#1a2332] border-gray-700 text-white"
+                  disabled={loading}
+                />
+                <Button 
+                  onClick={() => handleSearch()}
+                  disabled={loading || !ticker}
+                  className="w-full bg-[#0d5f5f] hover:bg-[#0a4d4d] text-white mt-3"
+                >
+                  {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Analyzing...</> : 'Run CO-GRI Assessment'}
+                </Button>
+              </div>
+            </div>
+            <div className="mt-6 pt-6 border-t border-gray-700">
+              <h3 className="text-white font-semibold mb-4">Supported Markets & Exchanges:</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {SUPPORTED_COUNTRIES.map((country) => (
+                  <div key={country.name} className="bg-[#1a2332] p-3 rounded-lg border border-gray-700">
+                    <div className={`w-2 h-2 rounded-full ${country.color} mb-2`}></div>
+                    <div className="text-white font-semibold text-sm">{country.name}</div>
+                    <div className="text-gray-400 text-xs mt-1">{country.exchanges}</div>
+                    {country.tickerSuffix && (
+                      <div className="text-[#0d5f5f] text-xs mt-1">Suffix: {country.tickerSuffix}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {error && (
+          <Alert className="max-w-4xl mx-auto mb-8 bg-red-900/20 border-red-800">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="text-red-300">{error}</AlertDescription>
+          </Alert>
+        )}
+
+        {result && result.channelBreakdown && (
+          <div className="max-w-6xl mx-auto space-y-6">
+            <Card className="bg-[#0f1e2e] border-gray-700">
+              <CardContent className="pt-6">
+                <div className="text-center">
+                  <div className={`${getRiskColor(result.riskLevel)} text-white px-6 py-3 rounded-lg mb-4 inline-block`}>
+                    <div className="text-5xl font-bold mb-2">{result.geopoliticalRiskScore}</div>
+                    <div className="text-lg font-semibold">{result.riskLevel}</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#0f1e2e] border-gray-700">
+              <CardContent className="pt-6">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+                  <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                    <div className="text-gray-400 text-xs mb-1">Company</div>
+                    <div className="text-white font-bold text-lg">{result.company}</div>
+                  </div>
+                  <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                    <div className="text-gray-400 text-xs mb-1">Ticker</div>
+                    <div className="text-white font-bold text-lg">{result.symbol}</div>
+                  </div>
+                  <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                    <div className="text-gray-400 text-xs mb-1">Sector</div>
+                    <div className="text-white font-bold text-lg">{result.sector}</div>
+                  </div>
+                  <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                    <div className="text-gray-400 text-xs mb-1">Raw Score</div>
+                    <div className="text-white font-bold text-lg">{result.rawScore.toFixed(2)}</div>
+                  </div>
+                  <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                    <div className="text-gray-400 text-xs mb-1">Sector Multiplier</div>
+                    <div className="text-white font-bold text-lg">{result.sectorMultiplier.toFixed(2)}x</div>
+                  </div>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700 mb-4">
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="px-3 py-1 rounded text-xs font-semibold bg-green-600/20 text-green-300 border border-green-500">
+                      🟢 Direct Evidence (A+)
+                    </span>
+                    <span className="px-3 py-1 rounded text-xs font-semibold bg-blue-600/20 text-blue-300 border border-blue-500">
+                      ⭐ High Confidence (A)
+                    </span>
+                    <span className="px-3 py-1 rounded text-xs font-semibold bg-purple-600/20 text-purple-300 border border-purple-500">
+                      📊 Medium Confidence (B)
+                    </span>
+                    <span className="px-3 py-1 rounded text-xs font-semibold bg-pink-600/20 text-pink-300 border border-pink-500">
+                      🎯 Sector Analysis (C)
+                    </span>
+                    <span className="px-3 py-1 rounded text-xs font-semibold bg-gray-600/20 text-gray-300 border border-gray-500">
+                      📈 Estimate (D)
+                    </span>
+                  </div>
+                  <div className="text-gray-300 text-xs mb-2">
+                    v3.4 Enhanced: Graduated Evidence Scoring with Jurisdiction-Aware, Evidence-First Methodology
+                  </div>
+                  <div className="text-gray-400 text-xs">
+                    v3.4 Enhanced Four-Channel Framework with Graduated Evidence Scoring System
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-3">
+                  <Button className="bg-[#0d5f5f] hover:bg-[#0a4d4d] text-white flex items-center gap-2">
+                    <Download className="h-4 w-4" />
+                    Download v3.4 Enhanced Report
+                  </Button>
+                  <Button variant="outline" className="border-gray-600 text-white hover:bg-[#1a2332] flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Download v3.4 Fallback Summary
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {result.calculationSteps && result.calculationSteps.length > 0 && (
+              <Card className="bg-[#0f1e2e] border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    v3.4 Step-by-Step Calculation Methodology
+                  </CardTitle>
+                  <CardDescription className="text-gray-300">
+                    Comprehensive breakdown of all 7 calculation steps with detailed country-by-country analysis
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {result.calculationSteps.map((step, idx) => (
+                      <div key={idx} className="bg-[#1a2332] rounded-lg border border-gray-700 overflow-hidden">
+                        <div 
+                          className="p-4 cursor-pointer hover:bg-[#1f2937] transition-colors"
+                          onClick={() => toggleStepExpansion(idx)}
+                        >
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-emerald-400 font-semibold text-lg">{step.step}</h4>
+                            {expandedSteps[idx] ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
+                          </div>
+                        </div>
+                        
+                        {expandedSteps[idx] && (
+                          <div className="px-4 pb-4 border-t border-gray-700">
+                            <div className="space-y-3 mt-4">
+                              <div className="bg-[#0a1520] p-3 rounded">
+                                <div className="text-green-300 font-mono text-sm mb-2">Formula:</div>
+                                <div className="text-white font-mono text-xs whitespace-pre-wrap">{step.formula}</div>
+                              </div>
+                              
+                              <div className="text-gray-300 text-sm">
+                                <strong>Values:</strong>
+                                <div className="ml-4 mt-2 space-y-1">
+                                  {Object.entries(step.values).map(([key, value]) => (
+                                    <div key={key} className="text-gray-300">
+                                      {key}: <span className="text-white font-semibold">{typeof value === 'number' ? value.toFixed(4) : String(value)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                              
+                              <div className="text-gray-300 text-sm">
+                                <strong>Result:</strong> <span className="text-white font-semibold text-lg">{step.result.toFixed(2)}</span>
+                              </div>
+                              
+                              <div className="text-gray-400 text-sm italic">
+                                {step.explanation}
+                              </div>
+                              
+                              {step.countryDetails && (
+                                <div className="mt-4 bg-[#0a1520] p-4 rounded border border-gray-700">
+                                  <pre className="text-gray-300 text-xs whitespace-pre-wrap font-mono overflow-x-auto">
+                                    {step.countryDetails}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {result.channelBreakdown && result.countryExposures && (
+              <Card className="bg-[#0f1e2e] border-gray-700">
+                <CardHeader>
+                  <CardTitle className="text-white text-center">
+                    v3.4 Enhanced Four-Channel Exposure Analysis with Graduated Evidence Scoring
+                  </CardTitle>
+                  <CardDescription className="text-gray-300 text-center text-sm">
+                    Detailed breakdown by exposure channel with v3.4 graduated evidence levels (A+ to D): Revenue, Operations, Supply Chain, Assets
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-700">
+                          <th className="text-left p-3 text-gray-300 font-semibold">Country</th>
+                          <th className="text-center p-3 text-gray-300 font-semibold">Revenue</th>
+                          <th className="text-center p-3 text-gray-300 font-semibold">Operations</th>
+                          <th className="text-center p-3 text-gray-300 font-semibold">Supply</th>
+                          <th className="text-center p-3 text-gray-300 font-semibold">Assets</th>
+                          <th className="text-center p-3 text-gray-300 font-semibold">v3.4 Blended</th>
+                          <th className="text-center p-3 text-gray-300 font-semibold">Alignment</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.countryExposures.map((exp, idx) => {
+                          const channelData = result.channelBreakdown![exp.country];
+                          if (!channelData) return null;
+
+                          const revWeight = (channelData.revenue?.weight || 0) * 100;
+                          const opsWeight = (channelData.operations?.weight || 0) * 100;
+                          const supWeight = (channelData.supply?.weight || 0) * 100;
+                          const assWeight = (channelData.assets?.weight || 0) * 100;
+                          const blendedWeight = exp.exposureWeight * 100;
+                          const alignmentFactor = exp.politicalAlignment?.alignmentFactor ?? 1.0;
+
+                          const revBadges = getEvidenceBadges(channelData.revenue?.fallbackType, channelData.revenue?.status);
+                          const opsBadges = getEvidenceBadges(channelData.operations?.fallbackType, channelData.operations?.status);
+                          const supBadges = getEvidenceBadges(channelData.supply?.fallbackType, channelData.supply?.status);
+                          const assBadges = getEvidenceBadges(channelData.assets?.fallbackType, channelData.assets?.status);
+
+                          return (
+                            <tr key={idx} className="border-b border-gray-700 hover:bg-[#1a2332] transition-colors">
+                              <td className="p-3 text-white font-medium">{exp.country}</td>
+                              <td className="p-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-white text-sm">{revWeight.toFixed(1)}%</span>
+                                  <div className="flex gap-1">
+                                    {revBadges.map((badge, i) => (
+                                      <span 
+                                        key={i} 
+                                        className={`inline-block w-3 h-3 rounded-sm ${getBadgeColor(badge, channelData.revenue?.fallbackType, channelData.revenue?.status)}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-white text-sm">{opsWeight.toFixed(1)}%</span>
+                                  <div className="flex gap-1">
+                                    {opsBadges.map((badge, i) => (
+                                      <span 
+                                        key={i} 
+                                        className={`inline-block w-3 h-3 rounded-sm ${getBadgeColor(badge, channelData.operations?.fallbackType, channelData.operations?.status)}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-white text-sm">{supWeight.toFixed(1)}%</span>
+                                  <div className="flex gap-1">
+                                    {supBadges.map((badge, i) => (
+                                      <span 
+                                        key={i} 
+                                        className={`inline-block w-3 h-3 rounded-sm ${getBadgeColor(badge, channelData.supply?.fallbackType, channelData.supply?.status)}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex flex-col items-center gap-1">
+                                  <span className="text-white text-sm">{assWeight.toFixed(1)}%</span>
+                                  <div className="flex gap-1">
+                                    {assBadges.map((badge, i) => (
+                                      <span 
+                                        key={i} 
+                                        className={`inline-block w-3 h-3 rounded-sm ${getBadgeColor(badge, channelData.assets?.fallbackType, channelData.assets?.status)}`}
+                                      />
+                                    ))}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <span className="text-white font-semibold">{blendedWeight.toFixed(1)}%</span>
+                              </td>
+                              <td className="p-3 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  {getAlignmentIconComponent(alignmentFactor)}
+                                  <span className="text-white text-sm">{alignmentFactor.toFixed(2)}</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-6 p-4 bg-[#1a2332] rounded-lg border border-gray-700">
+                    <h4 className="text-white font-semibold mb-3">v3.4 Graduated Evidence Scoring Legend:</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-gray-300">
+                      <div className="flex items-start gap-2">
+                        <div className="flex gap-1 mt-1">
+                          <span className="inline-block w-3 h-3 rounded-sm bg-green-500" />
+                          <span className="inline-block w-3 h-3 rounded-sm bg-green-500" />
+                        </div>
+                        <span><strong className="text-green-400">Direct Evidence (A+, 95-100%):</strong> Direct SC + sector validation</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="flex gap-1 mt-1">
+                          <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" />
+                          <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" />
+                        </div>
+                        <span><strong className="text-blue-400">High Confidence (A, 90-94%):</strong> Revised SC + sector validation</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="flex gap-1 mt-1">
+                          <span className="inline-block w-3 h-3 rounded-sm bg-yellow-500" />
+                          <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" />
+                        </div>
+                        <span><strong className="text-yellow-400">Medium Confidence (B, 70-84%):</strong> Multiple indirect sources</span>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <div className="flex gap-1 mt-1">
+                          <span className="inline-block w-3 h-3 rounded-sm bg-gray-500" />
+                          <span className="inline-block w-3 h-3 rounded-sm bg-gray-500" />
+                        </div>
+                        <span><strong className="text-gray-400">Sector Intelligence (C, 60-69%):</strong> Sector patterns + limited data</span>
+                      </div>
+                    </div>
+
+                    <h4 className="text-white font-semibold mb-2 mt-4">v3.4 Fallback Types:</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-300">
+                      <div><strong className="text-blue-400">SSF (Segment-Specific):</strong> 60-69% - Sector patterns with limited data</div>
+                      <div><strong className="text-yellow-400">RF (Restricted):</strong> 50-59% - Pure sector-based estimates</div>
+                      <div><strong className="text-green-400">None (Direct Evidence):</strong> No fallback needed</div>
+                    </div>
+
+                    <h4 className="text-white font-semibold mb-2 mt-4">Alignment Icons:</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-gray-300">
+                      <div className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-green-400" />
+                        <span><strong className="text-green-400">Shield:</strong> High alignment (≥0.8)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Star className="w-4 h-4 text-yellow-400" />
+                        <span><strong className="text-yellow-400">Star:</strong> Medium alignment (0.5-0.8)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4 text-red-400" />
+                        <span><strong className="text-red-400">Warning:</strong> Low alignment (&lt;0.5)</span>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Key Geopolitical Risks Section */}
+            <Card className="bg-[#0f1e2e] border-gray-700">
+              <CardHeader>
+                <CardTitle className="text-white text-2xl">
+                  Key Geopolitical Risks (v3.4 Enhanced Expert Analysis)
+                </CardTitle>
+                <CardDescription className="text-gray-300">
+                  Comprehensive risk assessment integrating insights from BlackRock, Sean Foo, Michael Every, Alex Krainer, Louis-Vincent Gave, and Dr. Marc Faber with v3.4 enhanced methodology
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {result.countryExposures.slice(0, 7).map((exp, idx) => {
+                  const riskZone = getRiskZone(exp.countryShockIndex);
+                  const intelligence = COUNTRY_INTELLIGENCE[exp.country];
+                  const exposureAnalysis = getExposureAnalysis(exp.exposureWeight, exp.contribution);
+                  
+                  return (
+                    <Card key={idx} className="bg-[#1a2332] border-gray-700">
+                      <CardHeader>
+                        <CardTitle className="text-white text-xl">
+                          {exp.country} Geopolitical Risk Exposure (v3.4 Enhanced)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        <div>
+                          <h4 className="text-emerald-400 font-semibold mb-2">Summary:</h4>
+                          <p className="text-gray-300 text-sm">
+                            Blended exposure of {(exp.exposureWeight * 100).toFixed(1)}% with Country Shock Index of {exp.countryShockIndex.toFixed(1)} contributes {exp.contribution.toFixed(1)} points to overall risk score
+                          </p>
+                        </div>
+
+                        <div>
+                          <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced Analysis & Expert Insights:</h4>
+                          <p className="text-gray-300 text-sm mb-3">
+                            <strong>{riskZone.zone} (CSI: {exp.countryShockIndex.toFixed(1)}):</strong> {riskZone.description}
+                          </p>
+                          
+                          {intelligence && (
+                            <>
+                              {intelligence.intelligence && (
+                                <div className="mb-3">
+                                  <p className="text-gray-300 text-sm">
+                                    <strong>Country-Specific Intelligence (Sources: BlackRock Geopolitical Risk Dashboard, Sean Foo, Michael Every, Alex Krainer, Louis-Vincent Gave, Dr. Marc Faber):</strong>
+                                  </p>
+                                  <p className="text-gray-300 text-sm mt-1">{intelligence.intelligence}</p>
+                                </div>
+                              )}
+                              
+                              {intelligence.expertAnalysis && (
+                                <div className="mb-3">
+                                  <p className="text-gray-300 text-sm"><strong>Expert Analysis:</strong></p>
+                                  <p className="text-gray-300 text-sm mt-1 whitespace-pre-line">{intelligence.expertAnalysis}</p>
+                                </div>
+                              )}
+                              
+                              {intelligence.recentDevelopments && (
+                                <div className="mb-3">
+                                  <p className="text-gray-300 text-sm"><strong>Recent Developments:</strong></p>
+                                  <p className="text-gray-300 text-sm mt-1 whitespace-pre-line">{intelligence.recentDevelopments}</p>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        <div>
+                          <h4 className="text-emerald-400 font-semibold mb-2">Exposure Analysis:</h4>
+                          <p className="text-gray-300 text-sm">{exposureAnalysis}</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </CardContent>
+            </Card>
+
+            {/* Risk Management Recommendations */}
+            <Card className="bg-[#0f1e2e] border-gray-700">
+              <CardHeader>
+                <CardTitle className="text-white text-2xl">
+                  Risk Management Recommendations (v3.4 Enhanced)
+                </CardTitle>
+                <CardDescription className="text-gray-300">
+                  Suggested actions to mitigate identified risks using v3.4 enhanced methodology
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {result.recommendations.map((rec, idx) => (
+                  <div key={idx} className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                    <div className="flex items-start gap-3">
+                      <span className={`px-3 py-1 rounded text-xs font-semibold border ${getPriorityBadgeColor(rec.priority)}`}>
+                        {rec.priority}
+                      </span>
+                      <div className="flex-1">
+                        <h4 className="text-white font-semibold mb-1">{rec.category} (v3.4)</h4>
+                        <p className="text-gray-300 text-sm">{rec.action}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            {/* Data Sources & Methodology */}
+            <Card className="bg-[#0f1e2e] border-gray-700">
+              <CardHeader>
+                <CardTitle className="text-white text-2xl">
+                  Data Sources & Methodology (v3.4 Enhanced Multi-Tier Fallback)
+                </CardTitle>
+                <CardDescription className="text-gray-300">
+                  Comprehensive information sources used in this v3.4 enhanced assessment
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced Four-Channel Exposure Framework</h4>
+                  <p className="text-gray-300 text-sm">
+                    Revenue (40%), Supply Chain (35%), Physical Assets (15%), Financial (10%). Market channel removed from exposure calculation. Enhanced with v3.4 jurisdiction-aware, evidence-first methodology.
+                  </p>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced Political Alignment Factor (A_c) - Comprehensive Analysis</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    UN General Assembly voting similarity (Harvard Dataverse), Treaty & alliance networks (NATO, SCO, BRICS, QUAD, USMCA, AUKUS), Bilateral economic dependence (IMF DOTS, IMF CPIS, OECD trade/FDI flows). Applied as contribution amplifier with v3.4 enhanced mathematical calculations and comprehensive rationale:
+                  </p>
+                  <p className="text-gray-300 text-sm font-mono">
+                    Contribution = W × S_c × (1.0 + 0.5*(1.0 – A_c))
+                  </p>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced Alliance & Treaty Memberships</h4>
+                  <p className="text-gray-300 text-sm">
+                    NATO, QUAD, AUKUS, USMCA, EU, BRICS, SCO, ASEAN, GCC, MERCOSUR, African Union membership data with v3.4 dynamic weighting
+                  </p>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced UN Voting Patterns</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    UN General Assembly voting similarity scores (Harvard Dataverse), measuring diplomatic alignment between countries with v3.4 temporal weighting
+                  </p>
+                  <a href="https://dataverse.harvard.edu/dataverse/harvard" target="_blank" rel="noopener noreferrer" className="text-[#0d5f5f] hover:text-[#0a4d4d] text-sm flex items-center gap-1">
+                    https://dataverse.harvard.edu/dataverse/harvard
+                    <Info className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced Economic Interdependence</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    IMF Direction of Trade Statistics (DOTS), IMF Coordinated Portfolio Investment Survey (CPIS), OECD bilateral trade and FDI flow data with v3.4 real-time processing
+                  </p>
+                  <a href="https://data.imf.org/" target="_blank" rel="noopener noreferrer" className="text-[#0d5f5f] hover:text-[#0a4d4d] text-sm flex items-center gap-1">
+                    https://data.imf.org/
+                    <Info className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced SEC Filings - Comprehensive Multi-Channel Data Source</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    PRIMARY DATA SOURCE FOR ALL CHANNELS (v3.4): 10-K/20-F, 10-Q, 8-K, DEF 14A, EX-21, EX-10, EX-99 with enhanced parsing and validation
+                  </p>
+                  <a href="https://www.sec.gov/edgar/searchedgar/companysearch.html" target="_blank" rel="noopener noreferrer" className="text-[#0d5f5f] hover:text-[#0a4d4d] text-sm flex items-center gap-1">
+                    https://www.sec.gov/edgar/searchedgar/companysearch.html
+                    <Info className="w-3 h-3" />
+                  </a>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-emerald-400 font-semibold mb-2">v3.4 Enhanced Multi-Channel Assessment with Graduated Evidence Scoring + Channel-Specific Logic + Full Database Integration</h4>
+                  <p className="text-gray-300 text-sm">
+                    Primary data source for geographic exposure with v3.4 enhancements
+                  </p>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700 text-center">
+                  <p className="text-white font-semibold mb-2">
+                    Powered by CedarOwl's v3.4 Enhanced Methodology: Four-Channel Exposure + Graduated Evidence Scoring System
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2 text-xs">
+                    <span className="text-green-400">✅ Direct Evidence (A+)</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-blue-400">📊 High Confidence (A)</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-purple-400">📈 Medium Confidence (B)</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-pink-400">🔍 Sector Analysis (C)</span>
+                    <span className="text-gray-400">•</span>
+                    <span className="text-gray-400">📉 Estimate (D)</span>
+                  </div>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700 text-center">
+                  <p className="text-[#0d5f5f] font-semibold text-sm">🔧 Diagnostic Tool</p>
+                </div>
+
+                <div className="bg-[#1a2332] p-4 rounded-lg border border-gray-700">
+                  <h4 className="text-white font-semibold mb-2">Disclaimer</h4>
+                  <p className="text-gray-300 text-xs">
+                    This v3.4 enhanced assessment is for informational purposes only and does not constitute financial, investment, or legal advice. The CO-GRI v3.4 methodology provides risk analysis based on publicly available data and should be used as one factor among many in decision-making processes. CedarOwl makes no warranties regarding the accuracy or completeness of the information provided. Users should conduct their own due diligence and consult with qualified professionals before making any investment or business decisions. Past performance and risk assessments do not guarantee future results.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

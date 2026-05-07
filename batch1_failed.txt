@@ -1,0 +1,10 @@
+MSFT: No revenue segments found
+AMZN: No revenue segments found
+TSLA: No revenue segments found
+BRK.B: No revenue segments found
+V: No revenue segments found
+WMT: No revenue segments found
+MA: No revenue segments found
+UNH: No revenue segments found
+DIS: No revenue segments found
+ADBE: No revenue segments found

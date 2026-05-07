@@ -1,0 +1,364 @@
+# -----------------------------------------------------------------------------
+# CO-GRI Platform - Monthly Benchmark & Global Price Data Update
+# -----------------------------------------------------------------------------
+#
+# Runs at 06:00 UTC on the 1st of every month (and on manual trigger).
+#
+# Two download jobs:
+#
+#  1. update-benchmarks  — US/global benchmark indices + currency pairs
+#     Output: public/data/benchmarks/
+#     Tickers: ^GSPC, ^DJI, URTH (existing)
+#              ^BVSP, ^HSI, ^J203.JO, ^FTSE, ^STI, ^TWII, ^GSPTSE (new regional)
+#              BRLUSD=X, HKDUSD=X, ZARUSD=X, SGDUSD=X, TWDUSD=X, CADUSD=X (FX)
+#
+#  2. update-global-prices  — Phase-1 global baseline company price data
+#     Output: public/data/global-prices/
+#     31 tickers across BVMF, HKG, JSE, LSE, SGX, TAI, TSE exchanges
+#     Same daily + weekly CSV structure as benchmarks
+#
+# -----------------------------------------------------------------------------
+
+name: Update Benchmark Data
+
+on:
+  schedule:
+    # Runs at 06:00 UTC on the 1st of every month
+    - cron: '0 6 1 * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  # ── Job 1: Benchmark indices + currency pairs ──────────────────────────────
+  update-benchmarks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas
+
+      - name: Download benchmark data
+        run: |
+          python - <<'EOF'
+          import yfinance as yf
+          import pandas as pd
+          import json
+          import os
+          from datetime import datetime, timedelta
+
+          OUTPUT_DIR = "public/data/benchmarks"
+          os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+          END_DATE   = datetime.today().strftime("%Y-%m-%d")
+          START_DATE = (datetime.today() - timedelta(days=365 * 10 + 5)).strftime("%Y-%m-%d")
+
+          # ── US / global benchmarks (existing) ─────────────────────────────
+          # ── Regional benchmarks (Phase-1 addition) ────────────────────────
+          # ── Currency pairs for USD normalisation (Phase-1 addition) ───────
+          BENCHMARKS = {
+              # Existing US benchmarks
+              "sp500":           "^GSPC",
+              "dow":             "^DJI",
+              "msci_world":      "URTH",
+              # Regional benchmarks — Phase-1 global expansion
+              "bovespa":         "^BVSP",      # Brazil (BVMF)
+              "hang_seng":       "^HSI",       # Hong Kong (HKG)
+              "jse_allshare":    "^J203.JO",   # South Africa (JSE)
+              "ftse100":         "^FTSE",      # United Kingdom (LSE)
+              "straits_times":   "^STI",       # Singapore (SGX)
+              "taiwan_weighted": "^TWII",      # Taiwan (TAI)
+              "tsx_composite":   "^GSPTSE",    # Canada (TSE/TSX)
+              # Currency pairs for USD normalisation — Phase-1 global expansion
+              "fx_brl_usd":      "BRLUSD=X",   # Brazilian Real
+              "fx_hkd_usd":      "HKDUSD=X",   # Hong Kong Dollar
+              "fx_zar_usd":      "ZARUSD=X",   # South African Rand
+              "fx_sgd_usd":      "SGDUSD=X",   # Singapore Dollar
+              "fx_twd_usd":      "TWDUSD=X",   # Taiwan Dollar
+              "fx_cad_usd":      "CADUSD=X",   # Canadian Dollar
+          }
+
+          metadata = {
+              "downloaded_at": datetime.utcnow().isoformat() + "Z",
+              "date_range": {"start": START_DATE, "end": END_DATE},
+              "benchmarks": {}
+          }
+
+          for name, ticker in BENCHMARKS.items():
+              print(f"Downloading {ticker} ({name}) …")
+              raw = yf.download(ticker, start=START_DATE, end=END_DATE, auto_adjust=False, progress=False)
+
+              if raw.empty:
+                  print(f"  WARNING: no data returned for {ticker}")
+                  continue
+
+              # Flatten MultiIndex columns if present
+              if isinstance(raw.columns, pd.MultiIndex):
+                  raw.columns = raw.columns.get_level_values(0)
+
+              raw.index.name = "Date"
+              raw = raw.reset_index()
+
+              # Rename Adj Close → Adj_Close for consistency
+              raw = raw.rename(columns={"Adj Close": "Adj_Close"})
+
+              # Keep only the expected columns (some tickers may lack Volume)
+              keep = [c for c in ["Date", "Open", "High", "Low", "Close", "Volume", "Adj_Close"] if c in raw.columns]
+              raw = raw[keep]
+
+              # ── Daily ──────────────────────────────────────────────────────
+              daily_path = os.path.join(OUTPUT_DIR, f"{name}_daily.csv")
+              raw.to_csv(daily_path, index=False)
+              print(f"  Saved {len(raw)} daily rows → {daily_path}")
+
+              # ── Weekly (resample to week-end Friday) ───────────────────────
+              raw_indexed = raw.set_index("Date")
+              raw_indexed.index = pd.to_datetime(raw_indexed.index)
+
+              agg = {}
+              for col in raw_indexed.columns:
+                  col_lower = col.lower()
+                  if col_lower == "open":
+                      agg[col] = "first"
+                  elif col_lower == "high":
+                      agg[col] = "max"
+                  elif col_lower == "low":
+                      agg[col] = "min"
+                  elif col_lower in ("close", "adj_close"):
+                      agg[col] = "last"
+                  elif col_lower == "volume":
+                      agg[col] = "sum"
+
+              weekly = raw_indexed.resample("W-FRI").agg(agg).dropna(how="all")
+              weekly = weekly.reset_index().rename(columns={"Date": "Date"})
+
+              weekly_path = os.path.join(OUTPUT_DIR, f"{name}_weekly.csv")
+              weekly.to_csv(weekly_path, index=False)
+              print(f"  Saved {len(weekly)} weekly rows → {weekly_path}")
+
+              # ── Metadata entry ─────────────────────────────────────────────
+              metadata["benchmarks"][name] = {
+                  "ticker":       ticker,
+                  "daily_rows":   len(raw),
+                  "weekly_rows":  len(weekly),
+                  "actual_start": str(raw["Date"].iloc[0]) if len(raw) else None,
+                  "actual_end":   str(raw["Date"].iloc[-1]) if len(raw) else None,
+              }
+
+          meta_path = os.path.join(OUTPUT_DIR, "benchmark_metadata.json")
+          with open(meta_path, "w") as f:
+              json.dump(metadata, f, indent=2)
+          print(f"Metadata written → {meta_path}")
+          EOF
+
+      - name: Commit and push updated data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/data/benchmarks/
+          # Only commit if there are actual changes
+          if git diff --cached --quiet; then
+            echo "No changes to benchmark data — skipping commit."
+          else
+            git commit -m "chore: auto-refresh benchmark data [skip ci]"
+            git push
+          fi
+
+  # ── Job 2: Global company price data (Phase-1 expansion) ──────────────────
+  update-global-prices:
+    runs-on: ubuntu-latest
+    needs: update-benchmarks   # run after benchmarks to avoid push conflicts
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Pull the latest commit from job 1 so we don't create a merge conflict
+          ref: ${{ github.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas
+
+      - name: Download global company price data
+        run: |
+          python - <<'EOF'
+          import yfinance as yf
+          import pandas as pd
+          import json
+          import os
+          from datetime import datetime, timedelta
+
+          OUTPUT_DIR = "public/data/global-prices"
+          os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+          END_DATE   = datetime.today().strftime("%Y-%m-%d")
+          START_DATE = (datetime.today() - timedelta(days=365 * 10 + 5)).strftime("%Y-%m-%d")
+
+          # ── Phase-1 global baseline companies ─────────────────────────────
+          # Key  = file-safe slug used for CSV filenames
+          # Value = Yahoo Finance ticker symbol
+          #
+          # HKG tickers are zero-padded to 4 digits per Yahoo Finance convention.
+          # TSE special case: U.UN → U-UN.TO
+          GLOBAL_COMPANIES = {
+              # BVMF (Brazil) — suffix .SA
+              "CMIG3":  "CMIG3.SA",
+              "PETR3":  "PETR3.SA",
+              "RECV3":  "RECV3.SA",
+              "VALE3":  "VALE3.SA",
+              # HKG (Hong Kong) — zero-padded 4-digit suffix .HK
+              "HK0014": "0014.HK",   # Hysan Development
+              "HK1919": "1919.HK",   # COSCO Shipping Holdings
+              "HK2386": "2386.HK",   # Sinopec Engineering
+              "HK0315": "0315.HK",   # SmarTone Telecommunications
+              "HK0517": "0517.HK",   # COSCO Shipping International
+              "HK0857": "0857.HK",   # PetroChina
+              # JSE (South Africa) — suffix .JO
+              "SOL":    "SOL.JO",
+              "SSW":    "SSW.JO",
+              # LSE (United Kingdom) — suffix .L
+              "GLEN":   "GLEN.L",
+              "HSBK":   "HSBK.L",
+              "RIO_L":  "RIO.L",     # Native LSE listing (distinct from RIO ADR)
+              "SHEL_L": "SHEL.L",    # Native LSE listing (distinct from SHEL ADR)
+              # SGX (Singapore) — suffix .SI
+              "A7RU":   "A7RU.SI",
+              "F34":    "F34.SI",
+              "J36":    "J36.SI",
+              "NS8U":   "NS8U.SI",
+              "P8Z":    "P8Z.SI",
+              "TPED":   "TPED.SI",
+              # TAI (Taiwan) — suffix .TW
+              "TW2603": "2603.TW",   # Evergreen Marine
+              "TW2609": "2609.TW",   # Yangming Marine
+              # TSE (Canada) — suffix .TO  (special: U.UN → U-UN.TO)
+              "PHYS":   "PHYS.TO",
+              "POU":    "POU.TO",
+              "PSLV":   "PSLV.TO",
+              "PXT":    "PXT.TO",
+              "SPPP":   "SPPP.TO",
+              "U_UN":   "U-UN.TO",   # Sprott Physical Uranium Trust
+          }
+
+          metadata = {
+              "downloaded_at": datetime.utcnow().isoformat() + "Z",
+              "date_range": {"start": START_DATE, "end": END_DATE},
+              "description": "Phase-1 global baseline company price data",
+              "companies": {}
+          }
+
+          def download_and_save(slug: str, yahoo_ticker: str) -> dict:
+              """Download price data for one ticker and save daily + weekly CSVs."""
+              print(f"Downloading {yahoo_ticker} ({slug}) …")
+              try:
+                  raw = yf.download(
+                      yahoo_ticker,
+                      start=START_DATE,
+                      end=END_DATE,
+                      auto_adjust=False,
+                      progress=False,
+                  )
+              except Exception as exc:
+                  print(f"  ERROR downloading {yahoo_ticker}: {exc}")
+                  return {}
+
+              if raw.empty:
+                  print(f"  WARNING: no data returned for {yahoo_ticker}")
+                  return {}
+
+              # Flatten MultiIndex columns if present
+              if isinstance(raw.columns, pd.MultiIndex):
+                  raw.columns = raw.columns.get_level_values(0)
+
+              raw.index.name = "Date"
+              raw = raw.reset_index()
+              raw = raw.rename(columns={"Adj Close": "Adj_Close"})
+
+              keep = [c for c in ["Date", "Open", "High", "Low", "Close", "Volume", "Adj_Close"] if c in raw.columns]
+              raw = raw[keep]
+
+              # ── Daily ──────────────────────────────────────────────────────
+              daily_path = os.path.join(OUTPUT_DIR, f"{slug}_daily.csv")
+              raw.to_csv(daily_path, index=False)
+              print(f"  Saved {len(raw)} daily rows → {daily_path}")
+
+              # ── Weekly (resample to week-end Friday) ───────────────────────
+              raw_indexed = raw.set_index("Date")
+              raw_indexed.index = pd.to_datetime(raw_indexed.index)
+
+              agg = {}
+              for col in raw_indexed.columns:
+                  col_lower = col.lower()
+                  if col_lower == "open":
+                      agg[col] = "first"
+                  elif col_lower == "high":
+                      agg[col] = "max"
+                  elif col_lower == "low":
+                      agg[col] = "min"
+                  elif col_lower in ("close", "adj_close"):
+                      agg[col] = "last"
+                  elif col_lower == "volume":
+                      agg[col] = "sum"
+
+              weekly = raw_indexed.resample("W-FRI").agg(agg).dropna(how="all")
+              weekly = weekly.reset_index().rename(columns={"Date": "Date"})
+
+              weekly_path = os.path.join(OUTPUT_DIR, f"{slug}_weekly.csv")
+              weekly.to_csv(weekly_path, index=False)
+              print(f"  Saved {len(weekly)} weekly rows → {weekly_path}")
+
+              return {
+                  "yahoo_ticker":  yahoo_ticker,
+                  "daily_rows":    len(raw),
+                  "weekly_rows":   len(weekly),
+                  "actual_start":  str(raw["Date"].iloc[0])  if len(raw) else None,
+                  "actual_end":    str(raw["Date"].iloc[-1]) if len(raw) else None,
+              }
+
+          for slug, yahoo_ticker in GLOBAL_COMPANIES.items():
+              result = download_and_save(slug, yahoo_ticker)
+              if result:
+                  metadata["companies"][slug] = result
+
+          meta_path = os.path.join(OUTPUT_DIR, "global_prices_metadata.json")
+          with open(meta_path, "w") as f:
+              json.dump(metadata, f, indent=2)
+          print(f"\nMetadata written → {meta_path}")
+          print(f"Total companies processed: {len(metadata['companies'])}/{len(GLOBAL_COMPANIES)}")
+          EOF
+
+      - name: Commit and push global price data
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Pull latest to avoid conflicts with job 1's commit
+          git pull --rebase origin ${{ github.ref_name }} || true
+          git add public/data/global-prices/
+          if git diff --cached --quiet; then
+            echo "No changes to global price data — skipping commit."
+          else
+            git commit -m "chore: auto-refresh global company price data [skip ci]"
+            git push
+          fi

@@ -1,0 +1,54 @@
+{
+  "download_timestamp": "2026-05-04T13:11:28.854657Z",
+  "tickers": {
+    "^GSPC": {
+      "prefix": "sp500",
+      "daily_file": "sp500_daily.csv",
+      "daily_rows": 2515,
+      "daily_date_range": {
+        "start": "2016-05-02 00:00:00",
+        "end": "2026-05-01 00:00:00"
+      },
+      "weekly_file": "sp500_weekly.csv",
+      "weekly_rows": 522,
+      "weekly_date_range": {
+        "start": "2016-05-02 00:00:00",
+        "end": "2026-04-27 00:00:00"
+      }
+    },
+    "^DJI": {
+      "prefix": "dow",
+      "daily_file": "dow_daily.csv",
+      "daily_rows": 2515,
+      "daily_date_range": {
+        "start": "2016-05-02 00:00:00",
+        "end": "2026-05-01 00:00:00"
+      },
+      "weekly_file": "dow_weekly.csv",
+      "weekly_rows": 522,
+      "weekly_date_range": {
+        "start": "2016-05-02 00:00:00",
+        "end": "2026-04-27 00:00:00"
+      }
+    },
+    "URTH": {
+      "prefix": "msci_world",
+      "daily_file": "msci_world_daily.csv",
+      "daily_rows": 2515,
+      "daily_date_range": {
+        "start": "2016-05-02 00:00:00",
+        "end": "2026-05-01 00:00:00"
+      },
+      "weekly_file": "msci_world_weekly.csv",
+      "weekly_rows": 522,
+      "weekly_date_range": {
+        "start": "2016-05-02 00:00:00",
+        "end": "2026-04-27 00:00:00"
+      }
+    }
+  },
+  "date_range": {
+    "start": "2016-05-01",
+    "end": "2026-05-04"
+  }
+}

@@ -1,0 +1,47 @@
+--- This patch integrates Phase 1 Sector Multiplier Transparency into COGRI.tsx
+--- Changes:
+--- 1. Import orchestrator and enhanced components
+--- 2. Replace calculation call with orchestrator
+--- 3. Add SectorMultiplierCard component
+--- 4. Add validation warnings display
+--- 5. Update state to handle enhanced results
+
+Add imports at the top:
+import { orchestrateCOGRICalculation, isEnhancedResult } from '@/services/cogriCalculationOrchestrator';
+import { SectorMultiplierCard } from '@/components/SectorMultiplierCard';
+import { isFeatureEnabled } from '@/config/featureFlags';
+
+Replace calculateCOGRIScore call with:
+const calculationResult = orchestrateCOGRICalculation({
+  segments: geoData.segments,
+  channelBreakdown: geoData.channelBreakdown,
+  homeCountry: geoData.homeCountry,
+  sector: geoData.sector,
+  sectorMultiplier: geoData.sectorMultiplier || 1.0
+});
+
+Add after COGRI score display section:
+{isEnhancedResult(calculationResult) && isFeatureEnabled('showSectorMultiplierCard') && (
+  <div className="mt-6">
+    <SectorMultiplierCard
+      sectorMultiplierDetails={calculationResult.sectorMultiplierDetails}
+      sector={geoData.sector}
+      rawScore={calculationResult.rawScore}
+      finalScore={calculationResult.finalScore}
+    />
+  </div>
+)}
+
+Add validation warnings banner at the top of results:
+{isEnhancedResult(calculationResult) && calculationResult.sectorMultiplierDetails.warnings.length > 0 && isFeatureEnabled('showValidationWarnings') && (
+  <Alert className="mb-4 border-yellow-300 bg-yellow-50">
+    <AlertDescription>
+      <div className="font-semibold mb-2">⚠️ Sector Multiplier Validation Warnings</div>
+      <ul className="list-disc list-inside space-y-1 text-sm">
+        {calculationResult.sectorMultiplierDetails.warnings.map((warning, index) => (
+          <li key={index}>{warning}</li>
+        ))}
+      </ul>
+    </AlertDescription>
+  </Alert>
+)}

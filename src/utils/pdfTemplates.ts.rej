@@ -1,0 +1,13 @@
+--- src/utils/pdfTemplates.ts
++++ src/utils/pdfTemplates.ts
+@@ -539,8 +539,8 @@ export function generateIntegrityChecksSection(checks: IntegrityChecks): Conten
+       widths: ['50%', '50%'],
+       body: [
+         ['Metric', 'Value'],
+-        ['Pre-Normalize Sum', checks.preNormalizeSum.toFixed(6)],
+-        ['Post-Normalize Sum', checks.postNormalizeSum.toFixed(6)],
++        ['Pre-Normalize Sum', (typeof checks.preNormalizeSum === 'number' ? checks.preNormalizeSum.toFixed(6) : 'N/A')],
++        ['Post-Normalize Sum', (typeof checks.postNormalizeSum === 'number' ? checks.postNormalizeSum.toFixed(6) : 'N/A')],
+         ['Double Counting Detected', checks.doubleCountingDetected ? 'Yes' : 'No']
+       ]
+     },

@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: csi-postgres
+    environment:
+      POSTGRES_DB: csi_enhancement
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations/csi-enhancement:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # CSI Enhancement Ingestion Service
+  csi-ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile.csi
+    container_name: csi-ingestion
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/csi_enhancement
+      NODE_ENV: production
+      INGESTION_INTERVAL_MINUTES: 15
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+volumes:
+  postgres_data:
