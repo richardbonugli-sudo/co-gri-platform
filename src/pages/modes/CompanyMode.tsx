@@ -183,9 +183,11 @@ export default function CompanyModePage() {
 
   const { setActiveMode } = useGlobalDashboardStore();
 
+  // Fire once on mount — setActiveMode is a stable Zustand setter,
+  // empty deps array prevents re-firing on store reference changes.
   useEffect(() => {
     setActiveMode('Company');
-  }, [setActiveMode]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Parse ticker from URL query params
   const tickerFromUrl = useMemo(() => {
@@ -208,7 +210,13 @@ export default function CompanyModePage() {
 
   // Local State
   const [ticker, setTicker] = useState(tickerFromUrl || 'AAPL');
+  // Fix 2: isLoading only true on first mount; subsequent ticker changes use isUpgradingWithLive
+  const isFirstLoadRef = useRef(true);
+  const mountedRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [slowLoadWarning, setSlowLoadWarning] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const slowWarnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [calculationResult, setCalculationResult] = useState<any>(null);
   const [forecastOutlook, setForecastOutlook] = useState<any>(null);
   const [companyMeta, setCompanyMeta] = useState<{ name: string; sector: string } | null>(null);
@@ -226,10 +234,16 @@ export default function CompanyModePage() {
   // Abort controller for cleanup
   const abortRef = useRef<AbortController | null>(null);
 
-  // Update ticker when URL changes
+  // Fix 5: URL ticker double-trigger guard — only update if ticker actually changed
+  const prevTickerFromUrlRef = useRef<string | null>(null);
   useEffect(() => {
-    if (tickerFromUrl && tickerFromUrl !== ticker) {
+    if (
+      tickerFromUrl &&
+      tickerFromUrl !== ticker &&
+      tickerFromUrl !== prevTickerFromUrlRef.current
+    ) {
       console.log('[CompanyMode] URL ticker changed to:', tickerFromUrl);
+      prevTickerFromUrlRef.current = tickerFromUrl;
       setTicker(tickerFromUrl);
     }
   }, [tickerFromUrl]);
@@ -244,34 +258,50 @@ export default function CompanyModePage() {
     const signal = abortRef.current.signal;
 
     const loadCompanyData = async () => {
-      setIsLoading(true);
+      // Fix 2: Only show full-page loading skeleton on first mount
+      if (isFirstLoadRef.current) {
+        setIsLoading(true);
+      } else {
+        // Subsequent ticker changes: keep existing data visible, show upgrade indicator
+        setIsUpgradingWithLive(true);
+      }
       setLiveUpgradeComplete(false);
-      setIsUpgradingWithLive(false);
       setValidationReport(null);
       console.log('[CompanyMode] Starting progressive load for:', ticker);
 
       const t0 = Date.now();
 
       try {
+        // Clear previous error/warning states and start slow-load timer
+        setLoadError(null);
+        setSlowLoadWarning(false);
+        if (slowWarnTimerRef.current) clearTimeout(slowWarnTimerRef.current);
+        slowWarnTimerRef.current = setTimeout(() => setSlowLoadWarning(true), 3000);
+
         // ── Phase 1: Static snapshot (fast path, no live EDGAR) ──────────────
-        // We call getCompanyGeographicExposure which internally tries live EDGAR
-        // with a 30s timeout. We show a loading state until Phase 1 data arrives.
+        // We call getCompanyGeographicExposure which internally uses LEGACY_STATIC_OVERRIDE
+        // so it returns quickly. We show a loading state until Phase 1 data arrives.
         console.log('[CompanyMode] Phase 1: Fetching geographic exposure...');
 
-        // R5 FIX: 30-second timeout (was 10s)
+        // R5 FIX: 8-second timeout (reduced from 30s)
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Data loading timeout after 30s')), 30000)
+          setTimeout(() => reject(new Error('Data loading timeout after 8s')), 8000)
         );
 
-        setIsUpgradingWithLive(true);
+        if (isFirstLoadRef.current) {
+          setIsUpgradingWithLive(true);
+        }
         const geoDataPromise = getCompanyGeographicExposure(ticker);
         const geoData = await Promise.race([geoDataPromise, timeoutPromise]) as any;
 
         if (signal.aborted) return;
 
         console.log('[CompanyMode] Geographic data received:', geoData ? 'success' : 'null');
+        if (slowWarnTimerRef.current) { clearTimeout(slowWarnTimerRef.current); slowWarnTimerRef.current = null; }
+        setSlowLoadWarning(false);
         setIsUpgradingWithLive(false);
         setLiveUpgradeComplete(true);
+        isFirstLoadRef.current = false;
 
         if (!geoData) throw new Error('Company not found');
 
@@ -308,9 +338,9 @@ export default function CompanyModePage() {
         if (signal.aborted) return;
         console.error('[CompanyMode] Error loading company data:', error);
         setIsUpgradingWithLive(false);
-        alert(
-          `Error loading company data: ${error instanceof Error ? error.message : 'Unknown error'}. Please try refreshing the page.`
-        );
+        if (slowWarnTimerRef.current) { clearTimeout(slowWarnTimerRef.current); slowWarnTimerRef.current = null; }
+        setSlowLoadWarning(false);
+        setLoadError(`Error loading company data: ${error instanceof Error ? error.message : 'Unknown error'}. Please try refreshing the page.`);
       } finally {
         if (!signal.aborted) setIsLoading(false);
       }
@@ -387,12 +417,12 @@ export default function CompanyModePage() {
     }
   }, [calculationResult, rawGeoData, ticker, pipelineMs]);
 
-  // Auto-generate validation report when data is ready
+  // Fix 3: Auto-generate validation report when data is ready — correct dep array
   useEffect(() => {
     if (calculationResult && rawGeoData && !validationReport) {
       handleGenerateValidationReport();
     }
-  }, [calculationResult, rawGeoData]);
+  }, [calculationResult, rawGeoData, validationReport, handleGenerateValidationReport]);
 
   // ── Event handlers ────────────────────────────────────────────────────────
   const handleEventClick = useCallback((eventId: string) => {
@@ -416,12 +446,37 @@ export default function CompanyModePage() {
   }, [ticker, setActiveGlobalMode, setLocation]);
 
   // ── Loading state ─────────────────────────────────────────────────────────
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-background">
+        <GlobalNavigationBar />
+        <div className="container mx-auto p-6">
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-6 text-center space-y-3">
+            <p className="text-red-400 font-medium">Failed to load company data</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <button
+              className="mt-2 px-4 py-2 rounded bg-primary text-primary-foreground text-sm hover:opacity-90"
+              onClick={() => { setLoadError(null); setTicker(ticker); }}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading || !companyData) {
     return (
       <div className="min-h-screen bg-background">
         <GlobalNavigationBar />
         <div className="container mx-auto p-6">
           <LoadingSkeleton message="Loading company data…" />
+          {slowLoadWarning && (
+            <div className="text-sm text-amber-400 text-center mt-2">
+              Loading company data… this may take a moment.
+            </div>
+          )}
         </div>
       </div>
     );

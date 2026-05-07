@@ -37,7 +37,7 @@ import { getCompanySpecificExposure, type CompanyExposure } from '../../data/com
  *
  * To temporarily revert to legacy behaviour (e.g., for debugging), set this to true.
  */
-export const LEGACY_STATIC_OVERRIDE = false;
+export const LEGACY_STATIC_OVERRIDE = true;
 
 // ============================================================================
 // IN-MEMORY CACHE
