@@ -12,7 +12,7 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 122,
+      "dataSourceMs": 164,
       "filingFetched": true,
       "filingType": "annual_report_html",
       "filingDate": "2026-05-07",
@@ -24,13 +24,13 @@
       "ppeDataFound": false,
       "debtDataFound": false,
       "geographicSegmentsFound": false,
-      "structuredDataMs": 1,
+      "structuredDataMs": 0,
       "narrativeParsingSucceeded": true,
       "narrativeCountriesFound": 3,
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 1826,
+      "narrativeParsingMs": 1867,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -44,9 +44,9 @@
       "compositeConfidenceScore": 31,
       "confidenceGrade": "D",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 1949,
+      "totalPipelineMs": 2031,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:39:45.341Z"
+      "timestamp": "2026-05-07T18:38:18.942Z"
     },
     {
       "ticker": "SSW",
@@ -59,7 +59,7 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 122,
+      "dataSourceMs": 163,
       "filingFetched": true,
       "filingType": "annual_report_html",
       "filingDate": "2026-05-07",
@@ -77,7 +77,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 1622,
+      "narrativeParsingMs": 2059,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -91,9 +91,9 @@
       "compositeConfidenceScore": 31,
       "confidenceGrade": "D",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 1744,
+      "totalPipelineMs": 2222,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:39:45.791Z"
+      "timestamp": "2026-05-07T18:38:19.320Z"
     }
   ]
 }

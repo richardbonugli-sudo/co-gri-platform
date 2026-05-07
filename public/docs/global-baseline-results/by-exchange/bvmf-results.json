@@ -12,7 +12,7 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "adr_reuse",
-      "dataSourceMs": 293,
+      "dataSourceMs": 364,
       "filingFetched": true,
       "filingType": "adr_reuse",
       "filingDate": "2026-05-07",
@@ -44,9 +44,9 @@
       "compositeConfidenceScore": 52,
       "confidenceGrade": "C",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 295,
+      "totalPipelineMs": 366,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:39:41.681Z"
+      "timestamp": "2026-05-07T18:38:15.401Z"
     },
     {
       "ticker": "VALE3",
@@ -59,7 +59,7 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "adr_reuse",
-      "dataSourceMs": 123,
+      "dataSourceMs": 163,
       "filingFetched": true,
       "filingType": "adr_reuse",
       "filingDate": "2026-05-07",
@@ -91,9 +91,9 @@
       "compositeConfidenceScore": 52,
       "confidenceGrade": "C",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 124,
+      "totalPipelineMs": 164,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:39:41.976Z"
+      "timestamp": "2026-05-07T18:38:15.767Z"
     },
     {
       "ticker": "CMIG3",
@@ -106,12 +106,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 306,
+      "dataSourceMs": 358,
       "filingFetched": true,
       "filingType": "dfp_xml",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 1010,
-      "retrievalMs": 661,
+      "retrievalMs": 827,
       "retrievalError": null,
       "structuredDataFound": false,
       "revenueDataFound": false,
@@ -124,7 +124,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 2638,
+      "narrativeParsingMs": 2735,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -138,9 +138,9 @@
       "compositeConfidenceScore": 26,
       "confidenceGrade": "F",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 3605,
+      "totalPipelineMs": 3920,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:39:41.681Z"
+      "timestamp": "2026-05-07T18:38:15.400Z"
     },
     {
       "ticker": "RECV3",
@@ -153,12 +153,12 @@
       "companyType": "operating",
       "enteredDataPath": true,
       "dataSource": "exchange_portal",
-      "dataSourceMs": 318,
+      "dataSourceMs": 350,
       "filingFetched": true,
       "filingType": "dfp_xml",
       "filingDate": "2026-05-07",
       "filingSizeBytes": 1010,
-      "retrievalMs": 645,
+      "retrievalMs": 827,
       "retrievalError": null,
       "structuredDataFound": false,
       "revenueDataFound": false,
@@ -171,7 +171,7 @@
       "narrativeSupplyCountriesFound": 0,
       "narrativeRevenueCountriesFound": 0,
       "narrativeAssetsCountriesFound": 0,
-      "narrativeParsingMs": 3509,
+      "narrativeParsingMs": 2823,
       "channelTiersAssigned": true,
       "channelTiers": {
         "revenue": "FALLBACK",
@@ -185,9 +185,9 @@
       "compositeConfidenceScore": 26,
       "confidenceGrade": "F",
       "recencyMultiplier": 1,
-      "totalPipelineMs": 4472,
+      "totalPipelineMs": 4000,
       "errorMessage": null,
-      "timestamp": "2026-05-07T17:39:41.681Z"
+      "timestamp": "2026-05-07T18:38:15.401Z"
     }
   ]
 }
