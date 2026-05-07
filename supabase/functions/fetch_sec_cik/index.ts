@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
 
     const response = await fetch('https://www.sec.gov/files/company_tickers.json', {
       headers: {
-        'User-Agent': 'CedarOwl Research contact@cedarowl.com',
+        'User-Agent': 'CO-GRI-Platform/1.0 (Supabase Edge Function; contact@cogri.io)',
         'Accept': 'application/json',
       },
     });

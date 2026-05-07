@@ -128,6 +128,7 @@ jobs:
             echo "OK: SUPABASE_ANON_KEY is available"
           fi
           if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::warning title=OPENAI_API_KEY missing::OPENAI_API_KEY secret is not set. Narrative parsing (LLM geographic extraction) will be skipped for all companies. narrativeParsingSucceeded will be false. Add OPENAI_API_KEY under Settings → Secrets and variables → Actions to enable full narrative parsing."
             echo "WARNING: OPENAI_API_KEY secret is not set."
             echo "Narrative parsing will be skipped. narrativeParsingSucceeded will be false for all companies."
             MISSING="$MISSING OPENAI_API_KEY"
@@ -158,6 +159,16 @@ jobs:
           fi
           echo "Output directories ready"
           ls -la docs/baseline-results/
+
+      # -- Step 6a: Diagnose environment -------------------------------------
+      # Runs AAPL through the full pipeline logic in dry-run mode to validate
+      # the setup before the expensive full run begins. Catches TypeScript
+      # compilation errors, missing modules, and path issues early.
+      - name: Diagnose environment
+        run: |
+          echo "Running environment diagnostic (AAPL dry-run)..."
+          npx tsx src/scripts/runSECBaseline.ts --ticker=AAPL --dry-run
+          echo "Diagnostic passed ✅"
 
       # -- Step 6: Run the SEC baseline script with reliable timeout enforcement
       #
@@ -292,6 +303,7 @@ jobs:
             echo "script_status=failed" >> $GITHUB_OUTPUT
             exit $SCRIPT_EXIT
           fi
+
       # -- Step 7: Check if results were written (runs even on timeout) ------
       - name: Check for changes
         id: check_changes

@@ -564,7 +564,7 @@ function sleep(ms: number): Promise<void> {
 // ─── EDGAR Direct Access Constants ───────────────────────────────────────────
 
 /** User-Agent required by SEC EDGAR fair-use policy */
-const EDGAR_USER_AGENT = 'CO-GRI-Platform/1.0 research@cogri.io';
+const EDGAR_USER_AGENT = 'CO-GRI-Platform/1.0 (GitHub Actions; contact@cogri.io)';
 
 // ─── EDGAR Direct Helpers ─────────────────────────────────────────────────────
 
@@ -720,12 +720,12 @@ async function fetchFilingHTMLFromEDGAR(cik: string, accessionNumber: string): P
   const MAX_HTML_BYTES = 5 * 1024 * 1024; // 5MB
 
   return new Promise((resolve) => {
+    let data = '';
+    let bytesRead = 0;
     const req = https.get(
       docUrl,
       { headers: { 'User-Agent': EDGAR_USER_AGENT, 'Accept': 'text/html,application/xhtml+xml' } },
       (res) => {
-        let data = '';
-        let bytesRead = 0;
         res.on('data', (chunk: Buffer | string) => {
           const chunkStr = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
           bytesRead += Buffer.byteLength(chunkStr);
@@ -747,7 +747,6 @@ async function fetchFilingHTMLFromEDGAR(cik: string, accessionNumber: string): P
     );
     req.on('error', (e) => { verbose(`  [EDGAR] document request error: ${String(e)}`); resolve(null); });
     req.setTimeout(60000, () => { req.destroy(); resolve(data.length > 1000 ? data : null); });
-    let data = '';
   });
 }
 
@@ -782,8 +781,10 @@ async function fetchFilingDirectly(cik: string, formType: string): Promise<Filin
       };
     }
 
-    // Check if the found form matches what we want (or accept any annual report)
-    const targetForms = ['10-K', '20-F', '40-F'];
+    // Accept any annual report form type (10-K, 20-F, 40-F, and their amendments)
+    // Do NOT reject a valid annual report just because it differs from the requested formType.
+    // For example, a company searched as "10-K" may actually file "20-F" (foreign private issuer).
+    const targetForms = ['10-K', '10-K/A', '20-F', '20-F/A', '40-F', '40-F/A'];
     if (!targetForms.includes(filingMeta.form)) {
       return {
         succeeded: false,
@@ -791,7 +792,7 @@ async function fetchFilingDirectly(cik: string, formType: string): Promise<Filin
         filingDate: null,
         htmlSizeBytes: null,
         html: null,
-        error: `Found form ${filingMeta.form} but expected ${formType}`,
+        error: `Found form ${filingMeta.form} which is not a recognised annual report type`,
         durationMs: Date.now() - start,
       };
     }
@@ -2518,6 +2519,11 @@ async function processCompany(
     const cikLabel = result.enteredSECPath
       ? `SEC path (${cikResult.source})`
       : 'No CIK found';
+
+    // Fix 4: Prominent degraded-mode logging per company
+    if (USE_DIRECT_EDGAR_ONLY) {
+      process.stdout.write(`${prefix} ⚠️  [DEGRADED MODE] Supabase unavailable — using direct EDGAR fetch only (no LLM narrative)\n`);
+    }
 
     if (!result.enteredSECPath) {
       process.stdout.write(`${prefix} ${cikIcon} ${cikLabel} | ⏭  Skipping (no SEC path)\n`);

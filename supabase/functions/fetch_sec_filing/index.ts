@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
     const submissionsResponse = await fetch(submissionsUrl, {
       headers: {
-        'User-Agent': 'CedarOwl Research contact@cedarowl.com',
+        'User-Agent': 'CO-GRI-Platform/1.0 (Supabase Edge Function; contact@cogri.io)',
         'Accept-Encoding': 'gzip, deflate',
         'Host': 'data.sec.gov',
       },
@@ -154,7 +154,7 @@ Deno.serve(async (req) => {
     // Step 4: Fetch the actual filing HTML
     const filingResponse = await fetch(filingUrl, {
       headers: {
-        'User-Agent': 'CedarOwl Research contact@cedarowl.com',
+        'User-Agent': 'CO-GRI-Platform/1.0 (Supabase Edge Function; contact@cogri.io)',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
     });
