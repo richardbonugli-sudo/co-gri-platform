@@ -304,14 +304,23 @@ jobs:
             echo "NOTE: Script was stopped by time-budget watchdog - checking for partial results"
           fi
 
-          if git diff --quiet -- docs/global-baseline-results/ 2>/dev/null; then
+          # Primary check: latest.json exists and has real content (> 100 bytes means script wrote it)
+          LATEST_SIZE=0
+          if [ -f docs/global-baseline-results/latest.json ]; then
+            LATEST_SIZE=$(wc -c < docs/global-baseline-results/latest.json)
+          fi
+
+          if [ "$LATEST_SIZE" -gt "100" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "latest.json found with ${LATEST_SIZE} bytes - marking as changed"
+          elif git diff --quiet -- docs/global-baseline-results/ 2>/dev/null; then
             UNTRACKED=$(git ls-files --others --exclude-standard docs/global-baseline-results/ | wc -l)
             if [ "$UNTRACKED" -gt "0" ]; then
               echo "changed=true" >> $GITHUB_OUTPUT
               echo "New global-baseline-results files detected ($UNTRACKED untracked files)"
             else
               echo "changed=false" >> $GITHUB_OUTPUT
-              echo "No changes detected in docs/global-baseline-results/"
+              echo "No changes detected in docs/global-baseline-results/ and no latest.json with content"
             fi
           else
             echo "changed=true" >> $GITHUB_OUTPUT
@@ -329,7 +338,8 @@ jobs:
       # -- Step 8: Copy results to public folder (for Vite static serving) ---
       - name: Copy results to public folder
         # Always run so partial results are also served statically
-        if: always() && steps.check_changes.outputs.changed == 'true' && github.event.inputs.dry_run != 'true'
+        # Copy whenever latest.json exists - do not gate on check_changes to avoid stub blocking real results
+        if: always() && github.event.inputs.dry_run != 'true'
         run: |
           mkdir -p public/docs/global-baseline-results/by-exchange
           if [ -f docs/global-baseline-results/latest.json ]; then

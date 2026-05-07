@@ -605,7 +605,15 @@ const GlobalBaselineTab: React.FC = () => {
       const res = await fetch('/docs/global-baseline-results/latest.json', { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: GlobalRunSummary = await res.json();
-      setGlobalSummary(data);
+      // Detect stub file: runId is empty string and results array is empty
+      // This means the workflow ran but the script produced no output (likely missing secrets)
+      const isStub = (!data.runId || data.runId === '') && Array.isArray(data.results) && data.results.length === 0 && data.totalCompanies === 0;
+      if (isStub) {
+        setGlobalSummary(null);
+        setError('STUB_FILE');
+      } else {
+        setGlobalSummary(data);
+      }
     } catch (e) {
       setGlobalSummary(null);
       setError(e instanceof Error ? e.message : String(e));
@@ -665,26 +673,56 @@ const GlobalBaselineTab: React.FC = () => {
 
   // Empty / not-yet-run state
   if (!globalSummary || results.length === 0) {
+    const isStubFile = error === 'STUB_FILE';
     return (
       <Card className="bg-slate-900 border-slate-700">
         <CardContent className="py-12 flex flex-col items-center gap-5 text-center">
-          <Globe className="h-12 w-12 text-slate-600" />
+          <Globe className={`h-12 w-12 ${isStubFile ? 'text-amber-600' : 'text-slate-600'}`} />
           <div>
-            <p className="text-white font-semibold text-lg mb-2">
-              No Global Baseline Data Available Yet
-            </p>
-            <p className="text-slate-400 text-sm max-w-lg">
-              Run the <span className="font-mono text-slate-300">Global Baseline</span> workflow
-              in GitHub Actions to generate results. Once the workflow completes, it will commit{' '}
-              <span className="font-mono text-slate-300">
-                docs/global-baseline-results/latest.json
-              </span>{' '}
-              to the repository.
-            </p>
-            {error && (
-              <p className="text-xs text-rose-400 mt-3 font-mono bg-rose-950/40 rounded px-3 py-2 border border-rose-800 inline-block">
-                {error}
-              </p>
+            {isStubFile ? (
+              <>
+                <p className="text-amber-400 font-semibold text-lg mb-2">
+                  Workflow Ran But Produced No Results
+                </p>
+                <p className="text-slate-400 text-sm max-w-lg">
+                  The <span className="font-mono text-slate-300">Global Baseline</span> workflow
+                  completed but the script wrote an empty result file. This usually means one or
+                  more required GitHub Secrets are missing or invalid.
+                </p>
+                <div className="rounded-md bg-amber-950/40 border border-amber-800 px-4 py-3 text-left w-full max-w-lg mt-3">
+                  <p className="text-xs font-semibold text-amber-400 uppercase tracking-wider mb-2">
+                    Check these GitHub Secrets
+                  </p>
+                  <ul className="text-sm text-slate-300 space-y-1 list-disc list-inside font-mono">
+                    <li>FMP_API_KEY — Financial Modeling Prep API key</li>
+                    <li>OPENAI_API_KEY — for narrative parsing</li>
+                    <li>SUPABASE_URL — Supabase project URL</li>
+                    <li>SUPABASE_ANON_KEY — Supabase anon key</li>
+                  </ul>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Go to <span className="text-blue-400">Settings → Secrets and variables → Actions</span> to verify all secrets are set, then re-run the workflow.
+                  </p>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-white font-semibold text-lg mb-2">
+                  No Global Baseline Data Available Yet
+                </p>
+                <p className="text-slate-400 text-sm max-w-lg">
+                  Run the <span className="font-mono text-slate-300">Global Baseline</span> workflow
+                  in GitHub Actions to generate results. Once the workflow completes, it will commit{' '}
+                  <span className="font-mono text-slate-300">
+                    docs/global-baseline-results/latest.json
+                  </span>{' '}
+                  to the repository.
+                </p>
+                {error && error !== 'STUB_FILE' && (
+                  <p className="text-xs text-rose-400 mt-3 font-mono bg-rose-950/40 rounded px-3 py-2 border border-rose-800 inline-block">
+                    {error}
+                  </p>
+                )}
+              </>
             )}
           </div>
           <div className="rounded-md bg-slate-800 border border-slate-700 px-4 py-3 text-left w-full max-w-lg">
