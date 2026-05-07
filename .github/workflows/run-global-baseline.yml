@@ -435,11 +435,34 @@ jobs:
           git config --local user.name "github-actions[bot]"
 
           # Pull latest to avoid push conflicts (update-benchmark-data may have pushed)
+          # IMPORTANT: stash any unstaged changes (the freshly-written result files)
+          # BEFORE fetching/rebasing, then restore them afterwards.
+          # Without the stash, git rebase fails with "cannot rebase: You have unstaged
+          # changes", and the subsequent "git rebase --abort" fails with
+          # "fatal: no rebase in progress" (exit 128).
           git fetch origin
-          if ! git rebase origin/HEAD; then
+          STASH_OUTPUT=$(git stash --include-untracked 2>&1) || true
+          echo "git stash output: $STASH_OUTPUT"
+          STASH_CREATED=false
+          if echo "$STASH_OUTPUT" | grep -q "Saved working directory"; then
+            STASH_CREATED=true
+            echo "Stash created — will pop after rebase"
+          else
+            echo "Nothing to stash (working tree already clean)"
+          fi
+
+          # Now the working tree is clean — rebase is safe
+          REMOTE_BRANCH=$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null || echo "origin/main")
+          if ! git rebase "$REMOTE_BRANCH"; then
             echo "Rebase conflict detected — aborting rebase and using merge instead"
-            git rebase --abort
-            git merge --no-edit origin/HEAD || true
+            git rebase --abort 2>/dev/null || true
+            git merge --no-edit "$REMOTE_BRANCH" || true
+          fi
+
+          # Restore the stashed result files
+          if [ "$STASH_CREATED" = "true" ]; then
+            git stash pop || true
+            echo "Stash popped — result files restored"
           fi
 
           # Stage docs/ results (always tracked)
