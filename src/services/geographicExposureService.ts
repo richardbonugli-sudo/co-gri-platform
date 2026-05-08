@@ -940,8 +940,15 @@ export async function getCompanyGeographicExposure(
     console.log(`[${ticker}] Company-specific sector: ${companySpecific.sector}`);
   }
   
+  // PERF FIX: Skip external API resolution when companySpecific already provides
+  // name, sector, and homeCountry — avoids 3 parallel network calls on every load.
+  const canSkipResolution = !!(companySpecific?.companyName && companySpecific?.sector && companySpecific?.homeCountry);
   if (!companyName || !sector || !homeCountry) {
-    resolvedCompany = await resolveTickerMultiSource(ticker);
+    if (!canSkipResolution) {
+      resolvedCompany = await resolveTickerMultiSource(ticker);
+    } else {
+      console.log(`[${ticker}] PERF: Skipping resolveTickerMultiSource — companySpecific has all required fields`);
+    }
     
     if (!resolvedCompany) {
       const geoData = getCompanyGeographicExposureSync(ticker, companyName || ticker, sector || 'Technology', homeCountry || 'United States');
@@ -980,16 +987,27 @@ export async function getCompanyGeographicExposure(
   console.log(`[${ticker}]   - ticker: ${ticker}`);
   console.log(`[${ticker}]   - FINAL NAME: ${finalName}`);
   
-  try {
-    sectorClassification = await sectorClassificationService.classifySector(finalTicker, finalName, apiSector, apiIndustry, apiDescription);
-  } catch (error) {
-    console.error('Error classifying sector:', error);
+  // PERF FIX: Skip external sector classification when companySpecific already has sector
+  if (companySpecific?.sector) {
+    console.log(`[${ticker}] PERF: Skipping sectorClassificationService — using companySpecific.sector: ${companySpecific.sector}`);
     sectorClassification = {
-      sector: apiSector || 'Technology',
-      multiplier: sectorClassificationService.getSectorMultiplier(apiSector || 'Technology'),
-      confidence: 0,
-      sources: []
+      sector: companySpecific.sector,
+      multiplier: sectorClassificationService.getSectorMultiplier(companySpecific.sector),
+      confidence: 1,
+      sources: ['company-specific']
     };
+  } else {
+    try {
+      sectorClassification = await sectorClassificationService.classifySector(finalTicker, finalName, apiSector, apiIndustry, apiDescription);
+    } catch (error) {
+      console.error('Error classifying sector:', error);
+      sectorClassification = {
+        sector: apiSector || 'Technology',
+        multiplier: sectorClassificationService.getSectorMultiplier(apiSector || 'Technology'),
+        confidence: 0,
+        sources: []
+      };
+    }
   }
   
   const finalSector = companySpecific?.sector || sectorClassification?.sector || 'Technology';

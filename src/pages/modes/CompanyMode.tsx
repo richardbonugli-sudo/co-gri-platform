@@ -281,7 +281,7 @@ export default function CompanyModePage() {
 
         // R5 FIX: 8-second timeout (reduced from 30s)
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Data loading timeout after 8s')), 8000)
+          setTimeout(() => reject(new Error('Data loading timeout after 25s')), 25000)
         );
 
         if (isFirstLoadRef.current) {
