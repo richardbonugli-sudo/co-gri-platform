@@ -258,13 +258,9 @@ export default function CompanyModePage() {
     const signal = abortRef.current.signal;
 
     const loadCompanyData = async () => {
-      // Fix 2: Only show full-page loading skeleton on first mount
-      if (isFirstLoadRef.current) {
-        setIsLoading(true);
-      } else {
-        // Subsequent ticker changes: keep existing data visible, show upgrade indicator
-        setIsUpgradingWithLive(true);
-      }
+      // Always show full-page loading skeleton; clear all transient states
+      setIsLoading(true);
+      setIsUpgradingWithLive(false);
       setLiveUpgradeComplete(false);
       setValidationReport(null);
       console.log('[CompanyMode] Starting progressive load for:', ticker);
@@ -422,7 +418,7 @@ export default function CompanyModePage() {
     if (calculationResult && rawGeoData && !validationReport) {
       handleGenerateValidationReport();
     }
-  }, [calculationResult, rawGeoData, validationReport, handleGenerateValidationReport]);
+  }, [calculationResult, rawGeoData]); // stable — avoids validation-report infinite loop
 
   // ── Event handlers ────────────────────────────────────────────────────────
   const handleEventClick = useCallback((eventId: string) => {
