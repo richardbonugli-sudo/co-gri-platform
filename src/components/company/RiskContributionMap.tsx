@@ -53,8 +53,9 @@ const TIER_CONFIG: Record<EvidenceTier, { label: string; className: string; tool
   },
 };
 
-const TierBadge: React.FC<{ tier: EvidenceTier }> = ({ tier }) => {
-  const { label, className, tooltip } = TIER_CONFIG[tier];
+const TierBadge: React.FC<{ tier?: EvidenceTier | string | null }> = ({ tier }) => {
+  const safeTier: EvidenceTier = (tier && tier in TIER_CONFIG) ? (tier as EvidenceTier) : 'MODELED';
+  const { label, className, tooltip } = TIER_CONFIG[safeTier];
   return (
     <span
       className={`inline-flex items-center text-[9px] font-semibold px-1 py-0.5 rounded border ${className}`}
