@@ -1,0 +1,220 @@
+{
+  "downloaded_at": "2026-06-01T11:49:21.210240Z",
+  "date_range": {
+    "start": "2016-05-29",
+    "end": "2026-06-01"
+  },
+  "description": "Phase-1 global baseline company price data",
+  "companies": {
+    "CMIG3": {
+      "yahoo_ticker": "CMIG3.SA",
+      "daily_rows": 2493,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "PETR3": {
+      "yahoo_ticker": "PETR3.SA",
+      "daily_rows": 2493,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "RECV3": {
+      "yahoo_ticker": "RECV3.SA",
+      "daily_rows": 1265,
+      "weekly_rows": 265,
+      "actual_start": "2021-05-05 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "VALE3": {
+      "yahoo_ticker": "VALE3.SA",
+      "daily_rows": 2493,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HK0014": {
+      "yahoo_ticker": "0014.HK",
+      "daily_rows": 2462,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HK1919": {
+      "yahoo_ticker": "1919.HK",
+      "daily_rows": 2462,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HK2386": {
+      "yahoo_ticker": "2386.HK",
+      "daily_rows": 2462,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HK0315": {
+      "yahoo_ticker": "0315.HK",
+      "daily_rows": 2462,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HK0517": {
+      "yahoo_ticker": "0517.HK",
+      "daily_rows": 2462,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HK0857": {
+      "yahoo_ticker": "0857.HK",
+      "daily_rows": 2462,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "SOL": {
+      "yahoo_ticker": "SOL.JO",
+      "daily_rows": 2512,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "SSW": {
+      "yahoo_ticker": "SSW.JO",
+      "daily_rows": 1566,
+      "weekly_rows": 328,
+      "actual_start": "2020-02-21 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "GLEN": {
+      "yahoo_ticker": "GLEN.L",
+      "daily_rows": 2523,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "HSBK": {
+      "yahoo_ticker": "HSBK.L",
+      "daily_rows": 2526,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "RIO_L": {
+      "yahoo_ticker": "RIO.L",
+      "daily_rows": 2525,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "SHEL_L": {
+      "yahoo_ticker": "SHEL.L",
+      "daily_rows": 2526,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "A7RU": {
+      "yahoo_ticker": "A7RU.SI",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "F34": {
+      "yahoo_ticker": "F34.SI",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "J36": {
+      "yahoo_ticker": "J36.SI",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "NS8U": {
+      "yahoo_ticker": "NS8U.SI",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "P8Z": {
+      "yahoo_ticker": "P8Z.SI",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "TPED": {
+      "yahoo_ticker": "TPED.SI",
+      "daily_rows": 753,
+      "weekly_rows": 157,
+      "actual_start": "2023-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "TW2603": {
+      "yahoo_ticker": "2603.TW",
+      "daily_rows": 2431,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "TW2609": {
+      "yahoo_ticker": "2609.TW",
+      "daily_rows": 2431,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "PHYS": {
+      "yahoo_ticker": "PHYS.TO",
+      "daily_rows": 2087,
+      "weekly_rows": 434,
+      "actual_start": "2018-02-05 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "POU": {
+      "yahoo_ticker": "POU.TO",
+      "daily_rows": 2510,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "PSLV": {
+      "yahoo_ticker": "PSLV.TO",
+      "daily_rows": 2087,
+      "weekly_rows": 434,
+      "actual_start": "2018-02-05 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "PXT": {
+      "yahoo_ticker": "PXT.TO",
+      "daily_rows": 2510,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "SPPP": {
+      "yahoo_ticker": "SPPP.TO",
+      "daily_rows": 2087,
+      "weekly_rows": 434,
+      "actual_start": "2018-02-05 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "U_UN": {
+      "yahoo_ticker": "U-UN.TO",
+      "daily_rows": 2510,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    }
+  }
+}
