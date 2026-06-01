@@ -1,54 +1,121 @@
 {
-  "download_timestamp": "2026-05-04T13:11:28.854657Z",
-  "tickers": {
-    "^GSPC": {
-      "prefix": "sp500",
-      "daily_file": "sp500_daily.csv",
-      "daily_rows": 2515,
-      "daily_date_range": {
-        "start": "2016-05-02 00:00:00",
-        "end": "2026-05-01 00:00:00"
-      },
-      "weekly_file": "sp500_weekly.csv",
-      "weekly_rows": 522,
-      "weekly_date_range": {
-        "start": "2016-05-02 00:00:00",
-        "end": "2026-04-27 00:00:00"
-      }
-    },
-    "^DJI": {
-      "prefix": "dow",
-      "daily_file": "dow_daily.csv",
-      "daily_rows": 2515,
-      "daily_date_range": {
-        "start": "2016-05-02 00:00:00",
-        "end": "2026-05-01 00:00:00"
-      },
-      "weekly_file": "dow_weekly.csv",
-      "weekly_rows": 522,
-      "weekly_date_range": {
-        "start": "2016-05-02 00:00:00",
-        "end": "2026-04-27 00:00:00"
-      }
-    },
-    "URTH": {
-      "prefix": "msci_world",
-      "daily_file": "msci_world_daily.csv",
-      "daily_rows": 2515,
-      "daily_date_range": {
-        "start": "2016-05-02 00:00:00",
-        "end": "2026-05-01 00:00:00"
-      },
-      "weekly_file": "msci_world_weekly.csv",
-      "weekly_rows": 522,
-      "weekly_date_range": {
-        "start": "2016-05-02 00:00:00",
-        "end": "2026-04-27 00:00:00"
-      }
-    }
-  },
+  "downloaded_at": "2026-06-01T11:48:51.866918Z",
   "date_range": {
-    "start": "2016-05-01",
-    "end": "2026-05-04"
+    "start": "2016-05-29",
+    "end": "2026-06-01"
+  },
+  "benchmarks": {
+    "sp500": {
+      "ticker": "^GSPC",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "dow": {
+      "ticker": "^DJI",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "msci_world": {
+      "ticker": "URTH",
+      "daily_rows": 2514,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "bovespa": {
+      "ticker": "^BVSP",
+      "daily_rows": 2485,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "hang_seng": {
+      "ticker": "^HSI",
+      "daily_rows": 2459,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "jse_allshare": {
+      "ticker": "^J203.JO",
+      "daily_rows": 2499,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "ftse100": {
+      "ticker": "^FTSE",
+      "daily_rows": 2525,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-31 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "straits_times": {
+      "ticker": "^STI",
+      "daily_rows": 2511,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "taiwan_weighted": {
+      "ticker": "^TWII",
+      "daily_rows": 2430,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "tsx_composite": {
+      "ticker": "^GSPTSE",
+      "daily_rows": 2510,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "fx_brl_usd": {
+      "ticker": "BRLUSD=X",
+      "daily_rows": 2602,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "fx_hkd_usd": {
+      "ticker": "HKDUSD=X",
+      "daily_rows": 2602,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "fx_zar_usd": {
+      "ticker": "ZARUSD=X",
+      "daily_rows": 2602,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "fx_sgd_usd": {
+      "ticker": "SGDUSD=X",
+      "daily_rows": 2602,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "fx_twd_usd": {
+      "ticker": "TWDUSD=X",
+      "daily_rows": 2602,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    },
+    "fx_cad_usd": {
+      "ticker": "CADUSD=X",
+      "daily_rows": 2602,
+      "weekly_rows": 522,
+      "actual_start": "2016-05-30 00:00:00",
+      "actual_end": "2026-05-29 00:00:00"
+    }
   }
 }
